@@ -8,7 +8,7 @@ mod payments;
 mod sync;
 
 use bitflags::bitflags;
-use breez_sdk_common::{buy::BuyBitcoinProviderApi, fiat::FiatService, sync::SyncLockClient};
+use breez_sdk_common::{buy::BuyBitcoinProviderApi, fiat::FiatService, sync::SigningClient};
 use platform_utils::HttpClient;
 use spark_wallet::SparkWallet;
 use std::sync::Arc;
@@ -129,7 +129,7 @@ pub(crate) struct BreezSdkParams {
     pub spark_wallet: Arc<SparkWallet>,
     pub event_emitter: Arc<EventEmitter>,
     pub nostr_client: Arc<NostrClient>,
-    pub sync_lock_client: Option<Arc<dyn SyncLockClient>>,
+    pub sync_signing_client: Option<SigningClient>,
     pub buy_bitcoin_provider: Arc<dyn BuyBitcoinProviderApi>,
 }
 
