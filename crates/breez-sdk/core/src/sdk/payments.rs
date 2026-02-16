@@ -36,7 +36,7 @@ use tokio_with_wasm::alias as tokio;
 use web_time::SystemTime;
 
 use super::{
-    BreezSdk, SyncRequest, SyncType,
+    BreezSdk, SyncType,
     helpers::{InternalEventListener, get_or_create_deposit_address, is_payment_match},
 };
 
@@ -505,12 +505,9 @@ impl BreezSdk {
                     .emit(&SdkEvent::from_payment(response.payment.clone()))
                     .await;
             }
-            if let Err(e) = self
-                .sync_trigger
-                .send(SyncRequest::no_reply(SyncType::WalletState))
-            {
-                error!("Failed to send sync trigger: {e:?}");
-            }
+            self.sync_coordinator
+                .trigger_sync_no_wait(SyncType::WalletState, true)
+                .await;
         }
         res
     }
@@ -641,9 +638,9 @@ impl BreezSdk {
             conversion_options.conversion_type,
             ConversionType::FromBitcoin
         ) {
-            let _ = self
-                .sync_trigger
-                .send(SyncRequest::no_reply(SyncType::WalletState));
+            self.sync_coordinator
+                .trigger_sync_no_wait(SyncType::WalletState, true)
+                .await;
         }
         // Wait for the received conversion payment to complete
         let payment = self
@@ -1168,7 +1165,7 @@ impl BreezSdk {
 
         let spark_wallet = self.spark_wallet.clone();
         let storage = self.storage.clone();
-        let sync_trigger = self.sync_trigger.clone();
+        let sync_coordinator = self.sync_coordinator.clone();
         let event_emitter = self.event_emitter.clone();
         let payment = payment.clone();
         let payment_id = payment_id.clone();
@@ -1196,9 +1193,9 @@ impl BreezSdk {
                                     error!("Failed to update payment in storage: {e:?}");
                                 }
                                 event_emitter.emit(&SdkEvent::from_payment(payment.clone())).await;
-                                if let Err(e) = sync_trigger.send(SyncRequest::no_reply(SyncType::WalletState)) {
-                                    error!("Failed to send sync trigger: {e:?}");
-                                }
+                                sync_coordinator
+                                    .trigger_sync_no_wait(SyncType::WalletState, true)
+                                    .await;
                                 return;
                             }
                         }

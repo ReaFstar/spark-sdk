@@ -1,6 +1,6 @@
 use spark_wallet::WalletEvent;
 use std::sync::Arc;
-use tokio::sync::{oneshot, watch};
+use tokio::sync::watch;
 use tokio_with_wasm::alias as tokio;
 use tracing::{debug, error, info, trace, warn};
 use web_time::{Duration, Instant, SystemTime};
@@ -29,8 +29,8 @@ impl BreezSdk {
         let sdk = self.clone();
         let mut shutdown_receiver = sdk.shutdown_sender.subscribe();
         let mut subscription = sdk.spark_wallet.subscribe_events();
-        let sync_trigger_sender = sdk.sync_trigger.clone();
-        let mut sync_trigger_receiver = sdk.sync_trigger.clone().subscribe();
+        let sync_coordinator = sdk.sync_coordinator.clone();
+        let mut sync_trigger_receiver = sdk.sync_coordinator.subscribe();
         let mut last_sync_time = SystemTime::now();
 
         let sync_interval = u64::from(self.config.sync_interval_secs);
@@ -90,9 +90,8 @@ impl BreezSdk {
                     // Ensure we sync at least the configured interval
                     () = tokio::time::sleep(Duration::from_secs(10)) => {
                         let now = SystemTime::now();
-                        if let Ok(elapsed) = now.duration_since(last_sync_time) && elapsed.as_secs() >= sync_interval
-                            && let Err(e) = sync_trigger_sender.send(SyncRequest::periodic()) {
-                            error!("Failed to trigger periodic sync: {e:?}");
+                        if let Ok(elapsed) = now.duration_since(last_sync_time) && elapsed.as_secs() >= sync_interval {
+                            sync_coordinator.trigger_sync_no_wait(SyncType::Full, false).await;
                         }
                     }
                 }
@@ -113,9 +112,9 @@ impl BreezSdk {
             }
             WalletEvent::Synced => {
                 info!("Synced");
-                if let Err(e) = self.sync_trigger.send(SyncRequest::full(None)) {
-                    error!("Failed to sync wallet: {e:?}");
-                }
+                self.sync_coordinator
+                    .trigger_sync_no_wait(super::SyncType::Full, true)
+                    .await;
             }
             WalletEvent::TransferClaimed(transfer) => {
                 info!("Transfer claimed");
@@ -133,12 +132,9 @@ impl BreezSdk {
                         .emit(&SdkEvent::PaymentSucceeded { payment })
                         .await;
                 }
-                if let Err(e) = self
-                    .sync_trigger
-                    .send(SyncRequest::no_reply(SyncType::WalletState))
-                {
-                    error!("Failed to sync wallet: {e:?}");
-                }
+                self.sync_coordinator
+                    .trigger_sync_no_wait(super::SyncType::WalletState, true)
+                    .await;
             }
             WalletEvent::TransferClaimStarting(transfer) => {
                 info!("Transfer claim starting");
@@ -155,12 +151,9 @@ impl BreezSdk {
                         .emit(&SdkEvent::PaymentPending { payment })
                         .await;
                 }
-                if let Err(e) = self
-                    .sync_trigger
-                    .send(SyncRequest::no_reply(SyncType::WalletState))
-                {
-                    error!("Failed to sync wallet: {e:?}");
-                }
+                self.sync_coordinator
+                    .trigger_sync_no_wait(super::SyncType::WalletState, true)
+                    .await;
             }
             WalletEvent::Optimization(event) => {
                 info!("Optimization event: {:?}", event);
@@ -595,15 +588,10 @@ impl BreezSdk {
         &self,
         request: SyncWalletRequest,
     ) -> Result<SyncWalletResponse, SdkError> {
-        let (tx, rx) = oneshot::channel();
-
-        if let Err(e) = self.sync_trigger.send(SyncRequest::full(Some(tx))) {
-            error!("Failed to send sync trigger: {e:?}");
-        }
-        let _ = rx.await.map_err(|e| {
-            error!("Failed to receive sync trigger: {e:?}");
-            SdkError::Generic(format!("sync trigger failed: {e:?}"))
-        })?;
+        // Use the coordinator to coalesce duplicate sync requests
+        self.sync_coordinator
+            .trigger_sync_and_wait(super::SyncType::Full, true)
+            .await?;
         Ok(SyncWalletResponse {})
     }
 }

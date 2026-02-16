@@ -622,6 +622,11 @@ pub struct Config {
     pub private_enabled_default: bool,
     pub optimization_config: OptimizationConfig,
     pub stable_balance_config: Option<StableBalanceConfig>,
+    /// Maximum number of concurrent transfer claims.
+    ///
+    /// Controls how many pending Spark transfers can be claimed in parallel.
+    /// Default is 1 (sequential claiming). Increase for server environments
+    /// with high incoming payment volume to improve throughput.
     pub max_concurrent_claims: u32,
 }
 

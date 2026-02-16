@@ -17,7 +17,7 @@ use crate::{
     },
 };
 
-use super::{BreezSdk, BreezSdkParams, helpers::validate_breez_api_key};
+use super::{BreezSdk, BreezSdkParams, SyncCoordinator, helpers::validate_breez_api_key};
 
 impl BreezSdk {
     /// Creates a new instance of the `BreezSdk`
@@ -62,6 +62,7 @@ impl BreezSdk {
                 params.sync_signing_client.clone(),
             ))
         });
+        let sync_coordinator = SyncCoordinator::new();
 
         let sdk = Self {
             config: params.config,
@@ -74,7 +75,7 @@ impl BreezSdk {
             lnurl_auth_signer: params.lnurl_auth_signer,
             event_emitter: params.event_emitter,
             shutdown_sender: params.shutdown_sender,
-            sync_trigger: tokio::sync::broadcast::channel(10).0,
+            sync_coordinator,
             zap_receipt_trigger: tokio::sync::broadcast::channel(10).0,
             initial_synced_watcher,
             external_input_parsers,

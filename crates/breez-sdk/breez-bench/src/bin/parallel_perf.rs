@@ -2,17 +2,12 @@
 //!
 //! Tests parallel payment throughput in regtest by executing
 //! multiple Spark transfers and Lightning payments concurrently.
-//!
-//! Also supports benchmarking concurrent transfer claiming with
-//! different `max_concurrent_claims` settings.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
 use clap::Parser;
-use futures::{StreamExt, stream};
 use rand::seq::SliceRandom;
 use rand::{Rng, RngCore, SeedableRng};
 use tempdir::TempDir;
@@ -61,42 +56,30 @@ struct Args {
     #[arg(long)]
     no_auto_optimize: bool,
 
-    /// Run leaf optimization before test starts with specified multiplicity (0-5)
+    /// Run leaf optimization before test starts with specified multiplicity
     #[arg(long, value_name = "MULTIPLICITY")]
     pre_optimize: Option<u8>,
-
-    /// Run concurrent claims benchmark instead of parallel payments
-    #[arg(long)]
-    claim_benchmark: bool,
-
-    /// Number of pending transfers to create for claim benchmark
-    #[arg(long, default_value = "10")]
-    pending_transfers: u32,
-
-    /// Comma-separated list of concurrency levels to test (e.g., "1,2,4,8")
-    #[arg(long, default_value = "1,2,4")]
-    concurrency_levels: String,
 }
 
 /// Type of payment to execute
 #[derive(Debug, Clone)]
-enum PaymentType_ {
+enum PaymentType {
     Transfer { address: String, amount: u64 },
     Lightning { invoice: String, amount: u64 },
 }
 
-impl PaymentType_ {
+impl PaymentType {
     fn name(&self) -> &'static str {
         match self {
-            PaymentType_::Transfer { .. } => "Transfer",
-            PaymentType_::Lightning { .. } => "Lightning",
+            PaymentType::Transfer { .. } => "Transfer",
+            PaymentType::Lightning { .. } => "Lightning",
         }
     }
 
     fn amount(&self) -> u64 {
         match self {
-            PaymentType_::Transfer { amount, .. } => *amount,
-            PaymentType_::Lightning { amount, .. } => *amount,
+            PaymentType::Transfer { amount, .. } => *amount,
+            PaymentType::Lightning { amount, .. } => *amount,
         }
     }
 }
@@ -105,14 +88,14 @@ impl PaymentType_ {
 #[derive(Debug, Clone)]
 struct PaymentTask {
     id: usize,
-    payment_type: PaymentType_,
+    payment_type: PaymentType,
 }
 
 /// Result of a single payment execution
 #[derive(Debug)]
 struct PaymentResult {
     id: usize,
-    payment_type: PaymentType_,
+    payment_type: PaymentType,
     duration: Duration,
     success: bool,
     error: Option<String>,
@@ -180,11 +163,6 @@ async fn main() -> Result<()> {
         info!("Pre-optimize: multiplicity {}", mult);
     }
     info!("");
-
-    // Run claim benchmark mode if requested
-    if args.claim_benchmark {
-        return run_claim_benchmark(&args).await;
-    }
 
     let total_payments = args.transfers + args.lightning;
     if total_payments == 0 {
@@ -257,7 +235,7 @@ async fn main() -> Result<()> {
         let amount = rng.gen_range(args.min_amount..=args.max_amount);
         payments.push(PaymentTask {
             id,
-            payment_type: PaymentType_::Transfer {
+            payment_type: PaymentType::Transfer {
                 address: receiver_address.clone(),
                 amount,
             },
@@ -269,7 +247,7 @@ async fn main() -> Result<()> {
     for (invoice, amount) in lightning_invoices {
         payments.push(PaymentTask {
             id,
-            payment_type: PaymentType_::Lightning { invoice, amount },
+            payment_type: PaymentType::Lightning { invoice, amount },
         });
         id += 1;
     }
@@ -393,9 +371,9 @@ async fn execute_payments(
 }
 
 /// Execute a single payment
-async fn execute_single_payment(sender: &BreezSdk, payment_type: &PaymentType_) -> Result<()> {
+async fn execute_single_payment(sender: &BreezSdk, payment_type: &PaymentType) -> Result<()> {
     match payment_type {
-        PaymentType_::Transfer { address, amount } => {
+        PaymentType::Transfer { address, amount } => {
             let prepare = sender
                 .prepare_send_payment(PrepareSendPaymentRequest {
                     payment_request: address.clone(),
@@ -416,7 +394,7 @@ async fn execute_single_payment(sender: &BreezSdk, payment_type: &PaymentType_) 
 
             Ok(())
         }
-        PaymentType_::Lightning { invoice, .. } => {
+        PaymentType::Lightning { invoice, .. } => {
             let prepare = sender
                 .prepare_send_payment(PrepareSendPaymentRequest {
                     payment_request: invoice.clone(),
@@ -503,11 +481,11 @@ fn print_summary(
         // Breakdown by payment type
         let transfer_results: Vec<_> = successful
             .iter()
-            .filter(|r| matches!(r.payment_type, PaymentType_::Transfer { .. }))
+            .filter(|r| matches!(r.payment_type, PaymentType::Transfer { .. }))
             .collect();
         let lightning_results: Vec<_> = successful
             .iter()
-            .filter(|r| matches!(r.payment_type, PaymentType_::Lightning { .. }))
+            .filter(|r| matches!(r.payment_type, PaymentType::Lightning { .. }))
             .collect();
 
         if !transfer_results.is_empty() {
@@ -704,251 +682,5 @@ async fn fund_via_faucet(sdk_instance: &mut BenchSdkInstance, amount: u64) -> Re
         }
 
         tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-}
-
-// ============================================================================
-// Concurrent Claims Benchmark
-// ============================================================================
-
-/// Result of a single claim benchmark run
-struct ClaimBenchmarkResult {
-    concurrency: u32,
-    total_duration: Duration,
-    successful_claims: u32,
-    #[allow(dead_code)]
-    failed_claims: u32,
-}
-
-/// Run the concurrent claims benchmark
-async fn run_claim_benchmark(args: &Args) -> Result<()> {
-    let concurrency_levels: Vec<u32> = args
-        .concurrency_levels
-        .split(',')
-        .map(|s| s.trim().parse::<u32>())
-        .collect::<Result<Vec<_>, _>>()?;
-
-    info!("Concurrent Claims Benchmark");
-    info!("===========================");
-    info!("Pending transfers: {}", args.pending_transfers);
-    info!("Concurrency levels: {:?}", concurrency_levels);
-    info!("");
-
-    let mut results: Vec<ClaimBenchmarkResult> = Vec::new();
-
-    for &concurrency in &concurrency_levels {
-        info!("Testing concurrency level: {}", concurrency);
-        let result = run_single_claim_benchmark(
-            args.pending_transfers,
-            concurrency,
-            args.min_amount,
-            args.max_amount,
-        )
-        .await?;
-        results.push(result);
-    }
-
-    print_claim_benchmark_summary(&results, args.pending_transfers);
-    Ok(())
-}
-
-/// Run a single claim benchmark iteration with a specific concurrency level
-async fn run_single_claim_benchmark(
-    num_transfers: u32,
-    concurrency: u32,
-    min_amount: u64,
-    max_amount: u64,
-) -> Result<ClaimBenchmarkResult> {
-    // 1. Create sender with default config (to send transfers)
-    let (mut sender, _receiver) = initialize_sdk_pair(true, None).await?;
-
-    // 2. Create receiver with specific max_concurrent_claims
-    let mut receiver_config = default_config(Network::Regtest);
-    receiver_config.optimization_config.auto_enabled = false;
-    receiver_config.max_concurrent_claims = concurrency;
-
-    let receiver_dir = TempDir::new("claim-bench-receiver")?;
-    let mut receiver_seed = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut receiver_seed);
-    let itest_receiver = build_sdk_with_custom_config(
-        receiver_dir.path().to_string_lossy().to_string(),
-        receiver_seed,
-        receiver_config,
-        None,
-        true,
-    )
-    .await?;
-
-    let mut receiver = BenchSdkInstance {
-        sdk: itest_receiver.sdk,
-        events: itest_receiver.events,
-        temp_dir: Some(receiver_dir),
-    };
-
-    // 3. Wait for sender sync
-    info!("Waiting for sender sync...");
-    wait_for_synced_event(&mut sender.events, 120).await?;
-
-    // Wait for receiver sync
-    info!("Waiting for receiver sync...");
-    wait_for_synced_event(&mut receiver.events, 120).await?;
-
-    // 4. Fund sender with enough to cover all transfers
-    let funding = max_amount * u64::from(num_transfers) + 10_000;
-    info!("Funding sender with {} sats...", funding);
-    fund_via_faucet(&mut sender, funding).await?;
-
-    // 5. Get receiver's Spark address
-    let receiver_address = receiver
-        .sdk
-        .receive_payment(ReceivePaymentRequest {
-            payment_method: ReceivePaymentMethod::SparkAddress,
-        })
-        .await?
-        .payment_request;
-    info!("Receiver address: {}", receiver_address);
-
-    // 6. Send N transfers in parallel (these will be pending on receiver side)
-    const SEND_CONCURRENCY: usize = 30;
-    let mut rng = rand::thread_rng();
-    let amounts: Vec<u64> = (0..num_transfers)
-        .map(|_| rng.gen_range(min_amount..=max_amount))
-        .collect();
-
-    info!(
-        "Sending {} transfers with {} concurrent requests...",
-        num_transfers, SEND_CONCURRENCY
-    );
-
-    let sender_sdk = Arc::new(sender.sdk);
-    let completed = Arc::new(AtomicU32::new(0));
-
-    let results: Vec<Result<()>> = stream::iter(amounts)
-        .map(|amount| {
-            let sdk = sender_sdk.clone();
-            let address = receiver_address.clone();
-            let completed = completed.clone();
-            let total = num_transfers;
-            async move {
-                let prepare = sdk
-                    .prepare_send_payment(PrepareSendPaymentRequest {
-                        payment_request: address,
-                        amount: Some(u128::from(amount)),
-                        token_identifier: None,
-                        conversion_options: None,
-                        fee_policy: None,
-                    })
-                    .await?;
-
-                sdk.send_payment(SendPaymentRequest {
-                    prepare_response: prepare,
-                    options: None,
-                    idempotency_key: None,
-                })
-                .await?;
-
-                let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
-                if done % 10 == 0 || done == total {
-                    info!("Sent {}/{} transfers", done, total);
-                }
-                Ok::<(), anyhow::Error>(())
-            }
-        })
-        .buffer_unordered(SEND_CONCURRENCY)
-        .collect()
-        .await;
-
-    // Check for errors
-    let failed: Vec<_> = results.iter().filter(|r| r.is_err()).collect();
-    if !failed.is_empty() {
-        warn!("{} transfers failed to send", failed.len());
-    }
-    info!("All {} transfers sent", num_transfers);
-
-    // Unwrap the Arc to get the SDK back
-    let sender_sdk = Arc::try_unwrap(sender_sdk).map_err(|_| anyhow::anyhow!("Failed to unwrap sender SDK"))?;
-
-    // 7. Trigger claim by calling sync and measure time
-    info!("Triggering claims with concurrency {}...", concurrency);
-    let start = Instant::now();
-    receiver.sdk.sync_wallet(SyncWalletRequest {}).await?;
-    let total_duration = start.elapsed();
-
-    // 8. Check balance to verify claims
-    let info = receiver
-        .sdk
-        .get_info(GetInfoRequest {
-            ensure_synced: Some(false),
-        })
-        .await?;
-    let successful = if info.balance_sats > 0 {
-        num_transfers
-    } else {
-        0
-    };
-    info!(
-        "Receiver balance after claims: {} sats",
-        info.balance_sats
-    );
-
-    // Cleanup
-    sender_sdk.disconnect().await.ok();
-    receiver.sdk.disconnect().await.ok();
-
-    info!(
-        "Concurrency {}: {} claims in {:.2}s",
-        concurrency,
-        successful,
-        total_duration.as_secs_f64()
-    );
-
-    Ok(ClaimBenchmarkResult {
-        concurrency,
-        total_duration,
-        successful_claims: successful,
-        failed_claims: num_transfers - successful,
-    })
-}
-
-/// Print summary of claim benchmark results
-fn print_claim_benchmark_summary(results: &[ClaimBenchmarkResult], num_transfers: u32) {
-    println!();
-    println!("============================================================");
-    println!("CONCURRENT CLAIMS BENCHMARK RESULTS");
-    println!("============================================================");
-    println!("Pending transfers: {}", num_transfers);
-    println!();
-    println!("| Concurrency | Total Time | Avg/Claim | Throughput  |");
-    println!("|-------------|------------|-----------|-------------|");
-
-    for r in results {
-        let avg_per_claim = r.total_duration / r.successful_claims.max(1);
-        let throughput = if r.total_duration.as_secs_f64() > 0.0 {
-            f64::from(r.successful_claims) / r.total_duration.as_secs_f64()
-        } else {
-            0.0
-        };
-
-        println!(
-            "| {:>11} | {:>10} | {:>9} | {:>9.1}/s |",
-            r.concurrency,
-            DurationStats::format_duration(r.total_duration),
-            DurationStats::format_duration(avg_per_claim),
-            throughput,
-        );
-    }
-
-    println!();
-
-    // Calculate speedup vs sequential
-    if let (Some(baseline), Some(best)) = (
-        results.iter().find(|r| r.concurrency == 1),
-        results.iter().min_by_key(|r| r.total_duration),
-    ) {
-        let speedup = baseline.total_duration.as_secs_f64() / best.total_duration.as_secs_f64();
-        println!(
-            "Best speedup: {:.2}x at concurrency {} vs sequential",
-            speedup, best.concurrency
-        );
     }
 }
