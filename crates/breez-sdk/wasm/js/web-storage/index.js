@@ -2234,14 +2234,12 @@ class IndexedDBStorage {
         if (
           lnurlReceiveMetadata &&
           (lnurlReceiveMetadata.nostrZapRequest ||
-            lnurlReceiveMetadata.senderComment ||
-            lnurlReceiveMetadata.preimage)
+            lnurlReceiveMetadata.senderComment)
         ) {
           payment.details.lnurlReceiveMetadata = {
             nostrZapRequest: lnurlReceiveMetadata.nostrZapRequest || null,
             nostrZapReceipt: lnurlReceiveMetadata.nostrZapReceipt || null,
             senderComment: lnurlReceiveMetadata.senderComment || null,
-            preimage: lnurlReceiveMetadata.preimage || null,
           };
         }
         resolve(payment);
