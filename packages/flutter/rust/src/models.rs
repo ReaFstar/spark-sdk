@@ -33,6 +33,7 @@ pub struct _Config {
     pub private_enabled_default: bool,
     pub optimization_config: OptimizationConfig,
     pub stable_balance_config: Option<StableBalanceConfig>,
+    pub max_concurrent_claims: u32,
 }
 
 #[frb(mirror(OptimizationConfig))]
@@ -1073,9 +1074,7 @@ pub struct _ConversionEstimate {
 
 #[frb(mirror(ConversionPurpose))]
 pub enum _ConversionPurpose {
-    OngoingPayment {
-        payment_request: String,
-    },
+    OngoingPayment { payment_request: String },
     SelfTransfer,
     AutoConversion,
 }

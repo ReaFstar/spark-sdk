@@ -622,6 +622,7 @@ pub struct Config {
     pub private_enabled_default: bool,
     pub optimization_config: OptimizationConfig,
     pub stable_balance_config: Option<StableBalanceConfig>,
+    pub max_concurrent_claims: u32,
 }
 
 #[macros::extern_wasm_bindgen(breez_sdk_spark::OptimizationConfig)]

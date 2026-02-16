@@ -23,6 +23,8 @@ pub struct SparkWalletConfig {
     pub leaf_auto_optimize_enabled: bool,
     pub token_outputs_optimization_options: TokenOutputsOptimizationOptions,
     pub self_payment_allowed: bool,
+    /// Maximum number of concurrent transfer claims (default: 1)
+    pub max_concurrent_claims: u32,
 }
 
 impl SparkWalletConfig {
@@ -63,6 +65,7 @@ impl SparkWalletConfig {
                     auto_optimize_interval: Some(Duration::from_secs(60 * 2)),
                 },
                 self_payment_allowed: false,
+                max_concurrent_claims: 1,
             },
             _ => Self {
                 network,
@@ -83,6 +86,7 @@ impl SparkWalletConfig {
                     auto_optimize_interval: Some(Duration::from_secs(60 * 2)),
                 },
                 self_payment_allowed: false,
+                max_concurrent_claims: 1,
             },
         }
     }
