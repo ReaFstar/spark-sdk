@@ -112,10 +112,10 @@ Contributions are always welcome. Please read our [contribution guide](CONTRIBUT
 - [x] External input parsers
 - [x] External signer
 - [x] LNURL-Auth
+- [x] Fiat on-ramp
 - [ ] Seedless restore
 - [ ] NWC
 - [ ] WebLN
-- [ ] Fiat on-ramp
 - [ ] BTC <> USDX swaps
 - [ ] Hodl invoice support 
 - [ ] Bolt12
