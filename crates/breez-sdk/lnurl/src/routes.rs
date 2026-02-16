@@ -744,27 +744,6 @@ where
                 error!("failed to save zap event: {}", e);
                 return Err(lnurl_error("internal server error"));
             }
-
-            // Subscribe to user if not already subscribed (only if nostr is enabled, and
-            // the user doesn't handle the zap receipt itself)
-            if let Some(nostr_keys) = &state.nostr_keys {
-                crate::zap::create_rpc_client_and_subscribe(
-                    state.db.clone(),
-                    pubkey,
-                    &state.connection_manager,
-                    &state.coordinator,
-                    state.signer.clone(),
-                    state.session_manager.clone(),
-                    state.service_provider.clone(),
-                    nostr_keys.clone(),
-                    Arc::clone(&state.subscribed_keys),
-                )
-                .await
-                .map_err(|e| {
-                    error!("failed to subscribe to user for zaps: {}", e);
-                    lnurl_error("internal server error")
-                })?;
-            }
         }
 
         if let Some(comment) = params.comment {
