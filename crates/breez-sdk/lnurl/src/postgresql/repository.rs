@@ -220,28 +220,23 @@ impl crate::repository::LnurlRepository for LnurlRepository {
     ) -> Result<Vec<ListMetadataMetadata>, LnurlRepositoryError> {
         let updated_after = updated_after.unwrap_or(0);
         let rows = sqlx::query(
-            "SELECT COALESCE(z.payment_hash, sc.payment_hash, i.payment_hash) AS payment_hash
+            "SELECT ph.payment_hash
              ,      sc.sender_comment
              ,      z.zap_request
              ,      z.zap_event
-             ,      GREATEST(z.updated_at, sc.updated_at, i.updated_at) AS updated_at
+             ,      GREATEST(COALESCE(z.updated_at, 0), COALESCE(sc.updated_at, 0), COALESCE(i.updated_at, 0)) AS updated_at
              ,      i.preimage
-             FROM invoices i
-             LEFT JOIN zaps z ON i.payment_hash = z.payment_hash
-             LEFT JOIN sender_comments sc ON i.payment_hash = sc.payment_hash
-             WHERE i.user_pubkey = $1 AND GREATEST(z.updated_at, sc.updated_at, i.updated_at) > $4
-             UNION
-             SELECT COALESCE(z.payment_hash, sc.payment_hash) AS payment_hash
-             ,      sc.sender_comment
-             ,      z.zap_request
-             ,      z.zap_event
-             ,      GREATEST(z.updated_at, sc.updated_at) AS updated_at
-             ,      NULL as preimage
-             FROM zaps z
-             FULL JOIN sender_comments sc ON z.payment_hash = sc.payment_hash
-             LEFT JOIN invoices i ON COALESCE(z.payment_hash, sc.payment_hash) = i.payment_hash
-             WHERE (z.user_pubkey = $1 OR sc.user_pubkey = $1) AND i.payment_hash IS NULL
-               AND GREATEST(z.updated_at, sc.updated_at) > $4
+             FROM (
+                 SELECT payment_hash FROM invoices WHERE user_pubkey = $1
+                 UNION
+                 SELECT payment_hash FROM zaps WHERE user_pubkey = $1
+                 UNION
+                 SELECT payment_hash FROM sender_comments WHERE user_pubkey = $1
+             ) ph
+             LEFT JOIN invoices i ON ph.payment_hash = i.payment_hash
+             LEFT JOIN zaps z ON ph.payment_hash = z.payment_hash
+             LEFT JOIN sender_comments sc ON ph.payment_hash = sc.payment_hash
+             WHERE GREATEST(COALESCE(z.updated_at, 0), COALESCE(sc.updated_at, 0), COALESCE(i.updated_at, 0)) > $4
              ORDER BY updated_at ASC
              OFFSET $2 LIMIT $3",
         )
