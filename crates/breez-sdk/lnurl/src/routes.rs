@@ -44,6 +44,7 @@ pub struct LnurlPayCallbackParams {
     pub amount: Option<u64>,
     pub comment: Option<String>,
     pub nostr: Option<String>,
+    pub expiry: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -657,7 +658,7 @@ where
                     desc_hash.to_byte_array(),
                 )),
                 Some(pubkey),
-                None,
+                params.expiry,
                 state.include_spark_address,
             )
             .await
