@@ -3,9 +3,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use crate::HttpError;
-
-use super::{HttpClient, HttpResponse, REQUEST_TIMEOUT};
+use super::{HttpClient, HttpError, HttpResponse, REQUEST_TIMEOUT};
 
 /// HTTP client implementation using reqwest for WASM platforms.
 pub struct ReqwestHttpClient {

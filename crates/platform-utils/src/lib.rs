@@ -4,11 +4,9 @@
 //! that work on both native (using bitreq) and WASM (using reqwest) platforms.
 
 mod auth;
-mod error;
 pub mod http;
 
 pub use auth::{
     ContentType, add_basic_auth_header, add_content_type_header, make_basic_auth_header,
 };
-pub use error::HttpError;
-pub use http::{DefaultHttpClient, HttpClient, HttpResponse, create_http_client};
+pub use http::{DefaultHttpClient, HttpClient, HttpError, HttpResponse, create_http_client};

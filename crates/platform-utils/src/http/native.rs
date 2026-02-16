@@ -2,9 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::HttpError;
-
-use super::{HttpClient, HttpResponse, REQUEST_TIMEOUT};
+use super::{HttpClient, HttpError, HttpResponse, REQUEST_TIMEOUT};
 
 /// Default connection pool capacity for the HTTP client.
 const DEFAULT_POOL_CAPACITY: usize = 10;
@@ -21,10 +19,7 @@ pub struct BitreqHttpClient {
 impl BitreqHttpClient {
     /// Create a new `BitreqHttpClient` with an optional user agent.
     pub fn new(user_agent: Option<String>) -> Self {
-        Self {
-            client: bitreq::Client::new(DEFAULT_POOL_CAPACITY),
-            user_agent,
-        }
+        Self::with_capacity(user_agent, DEFAULT_POOL_CAPACITY)
     }
 
     /// Create a new `BitreqHttpClient` with a custom connection pool capacity.
