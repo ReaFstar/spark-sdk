@@ -260,14 +260,14 @@ fn subscribe_to_user_for_invoices<DB>(
 /// This processor publishes zap receipts for paid invoices with retry logic.
 pub fn start_background_processor<DB>(
     db: DB,
-    nostr_keys: nostr::Keys,
+    nostr_keys: Option<nostr::Keys>,
     mut trigger_rx: watch::Receiver<()>,
 ) where
     DB: LnurlRepository + Clone + Send + Sync + 'static,
 {
     tokio::spawn(async move {
         // Process any pending items on startup
-        process_newly_paid_queue(&db, &nostr_keys).await;
+        process_newly_paid_queue(&db, nostr_keys.as_ref()).await;
 
         // Wait for triggers
         loop {
@@ -284,13 +284,13 @@ pub fn start_background_processor<DB>(
                 }
             }
 
-            process_newly_paid_queue(&db, &nostr_keys).await;
+            process_newly_paid_queue(&db, nostr_keys.as_ref()).await;
         }
     });
 }
 
 /// Process all pending items in the `newly_paid` queue.
-async fn process_newly_paid_queue<DB>(db: &DB, nostr_keys: &nostr::Keys)
+async fn process_newly_paid_queue<DB>(db: &DB, nostr_keys: Option<&nostr::Keys>)
 where
     DB: LnurlRepository + Clone + Send + Sync + 'static,
 {
@@ -308,14 +308,26 @@ where
 }
 
 /// Process a single `newly_paid` item: publish zap receipt if applicable.
+#[allow(clippy::too_many_lines)]
 async fn process_newly_paid_item<DB>(
     db: &DB,
-    nostr_keys: &nostr::Keys,
+    nostr_keys: Option<&nostr::Keys>,
     item: &crate::repository::NewlyPaid,
 ) where
     DB: LnurlRepository + Clone + Send + Sync + 'static,
 {
     let payment_hash = &item.payment_hash;
+
+    let Some(nostr_keys) = nostr_keys else {
+        if let Err(e) = db.delete_newly_paid(payment_hash).await {
+            error!(
+                "Failed to delete expired newly paid {}: {}",
+                payment_hash, e
+            );
+        }
+
+        return;
+    };
 
     // Check if we've exceeded max retry duration (14 days)
     let now = now_millis();
