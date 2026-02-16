@@ -1367,28 +1367,20 @@ async fn test_10_lud21_verify(
     info!("Payment completed on Bob's side");
 
     // Get the preimage from Alice's payment (proof of payment)
-    // Poll until the preimage is available in storage (sync may not have completed yet)
     let payment_id = pay_response.payment.id.clone();
-    let expected_preimage = wait_for(
-        || {
-            let sdk = alice.sdk.clone();
-            let payment_id = payment_id.clone();
-            async move {
-                let alice_payment = sdk
-                    .get_payment(GetPaymentRequest { payment_id })
-                    .await?
-                    .payment;
+    let alice_payment = alice
+        .sdk
+        .get_payment(GetPaymentRequest { payment_id })
+        .await?
+        .payment;
 
-                let Some(PaymentDetails::Lightning { htlc_details, .. }) = alice_payment.details else {
-                    anyhow::bail!("Expected Lightning payment details");
-                };
+    let Some(PaymentDetails::Lightning { htlc_details, .. }) = alice_payment.details else {
+        anyhow::bail!("Expected Lightning payment details");
+    };
 
-                htlc_details.preimage.ok_or_else(|| anyhow::anyhow!("No preimage in payment yet"))
-            }
-        },
-        30,
-    )
-    .await?;
+    let Some(expected_preimage) = htlc_details.preimage else {
+        anyhow::bail!("Expected preimage");
+    };
     info!("Payment preimage: {expected_preimage}");
 
     // After payment: verify should return settled=true with preimage
