@@ -32,7 +32,7 @@
   - [Sending payments using LNURL-Pay/Lightning address](guide/lnurl_pay.md)
   - [Receiving payments using LNURL-Pay/Lightning address](guide/receive_lnurl_pay.md)
   - [Receiving payments using LNURL-Withdraw](guide/lnurl_withdraw.md)
-  - [LNURL Authentication](guide/lnurl_auth.md)
+  - [Using LNURL-Auth](guide/lnurl_auth.md)
 - [User settings](guide/user_settings.md)
 - [Signing and verifying messages](guide/messages.md)
 - [Supporting fiat currencies](guide/fiat_currencies.md)
@@ -44,9 +44,9 @@
   - [Issuing tokens](guide/issuing_tokens.md)
 - [Advanced features](guide/advanced.md)
   - [Custom configuration](guide/config.md)
-  - [Spark HTLC Payments](guide/htlcs.md)
+  - [Spark HTLC payments](guide/htlcs.md)
   - [Custom leaf optimization](guide/optimize.md)
-  - [Using an External Signer](guide/external_signer.md)
+  - [Using an external signer](guide/external_signer.md)
 - [Moving to production](guide/moving_to_production.md)
 
 ---

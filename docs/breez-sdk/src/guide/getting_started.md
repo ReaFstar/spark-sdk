@@ -1,8 +1,6 @@
 # Getting Started
 
-Integrating Breez SDK - Nodeless _(Spark Implementation)_ into your application takes just a few minutes.
-
-Before you begin, make sure to read the [repository README](https://github.com/breez/spark-sdk#breez-sdk---nodeless-spark-implementation) carefully. Then follow these steps to get started:
+Integrating Breez SDK into your application takes just a few minutes. Follow these steps to get started:
 
 - **[Installing the SDK](/guide/install.md)**
 - **[Testing and development](/guide/testing.md)**
@@ -26,14 +24,14 @@ curl -d "fullname=<full name>" -d "company=<company>" -d "email=<email>" -d "mes
 
 When implementing the Breez SDK, we recommend reading through our [UX Guidelines](/guide/uxguide.md) to provide a consistent and intuitive experience for your end-users.
 
-Many of the guidelines are implemented in [Misty Breez](https://github.com/breez/misty-breez/), which you can use as the primary UX reference during SDK implementation.
+Many of the guidelines are implemented in [Glow](https://glow-app.co), which you can use as a UX reference during SDK implementation.
 
-## WebAssembly (WASM) Demo
+## Demo
 
-Looking for a quick way to try the SDK in your browser? Check out the WebAssembly (WASM) demo app:
+Looking for a quick way to try the SDK in your browser or as PWA? Check out our demo app *Glow*:
 
-- **Live demo:** [https://breez-sdk-spark-example.vercel.app](https://breez-sdk-spark-example.vercel.app)
-- **Repo:** [breez/breez-sdk-spark-example](https://github.com/breez/breez-sdk-spark-example)
+- **Live demo:** [https://glow-app.co](https://glow-app.co)
+- **Repo:** [breez/breez-sdk-spark-example](https://github.com/breez/breez-sdk-spark-example)  
 
 > **Note:** The demo is for demonstration purposes only and not intended for production use.
 
