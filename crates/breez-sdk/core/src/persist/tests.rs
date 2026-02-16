@@ -4,8 +4,9 @@ use chrono::Utc;
 
 use crate::{
     DepositClaimError, ListPaymentsRequest, LnurlWithdrawInfo, Payment, PaymentDetails,
-    PaymentMetadata, PaymentMethod, PaymentStatus, PaymentType, SparkHtlcDetails, SparkHtlcStatus,
-    Storage, TokenMetadata, TokenTransactionType, UpdateDepositPayload,
+    PaymentDetailsFilter, PaymentMetadata, PaymentMethod, PaymentStatus, PaymentType,
+    SparkHtlcDetails, SparkHtlcStatus, Storage, TokenMetadata, TokenTransactionType,
+    UpdateDepositPayload,
     persist::ObjectCacheRepository,
     sync_storage::{Record, RecordId, UnversionedRecordChange},
 };
@@ -2850,6 +2851,7 @@ pub async fn test_lightning_htlc_details_and_status_filtering(storage: Box<dyn S
         .list_payments(ListPaymentsRequest {
             payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Lightning {
                 htlc_status: Some(vec![SparkHtlcStatus::WaitingForPreimage]),
+                has_lnurl_preimage: None,
             }]),
             ..Default::default()
         })
@@ -2863,6 +2865,7 @@ pub async fn test_lightning_htlc_details_and_status_filtering(storage: Box<dyn S
         .list_payments(ListPaymentsRequest {
             payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Lightning {
                 htlc_status: Some(vec![SparkHtlcStatus::PreimageShared]),
+                has_lnurl_preimage: None,
             }]),
             ..Default::default()
         })
@@ -2880,6 +2883,7 @@ pub async fn test_lightning_htlc_details_and_status_filtering(storage: Box<dyn S
                     SparkHtlcStatus::WaitingForPreimage,
                     SparkHtlcStatus::PreimageShared,
                 ]),
+                has_lnurl_preimage: None,
             }]),
             ..Default::default()
         })
@@ -2891,7 +2895,8 @@ pub async fn test_lightning_htlc_details_and_status_filtering(storage: Box<dyn S
     assert!(all_htlc.iter().any(|p| p.id == "regular_ln"));
 }
 
-/// Test that `get_pending_lnurl_preimages` returns only payments that:
+/// Test that `list_payments` with `PaymentDetailsFilter::Lightning { has_lnurl_preimage: Some(false) }`
+/// returns only payments that:
 /// - Are completed receive Lightning payments
 /// - Have a preimage in the payment details
 /// - Have LNURL metadata without a preimage (i.e., preimage not yet sent to server)
@@ -2900,7 +2905,7 @@ pub async fn test_pending_lnurl_preimages(storage: Box<dyn Storage>) {
     use crate::SetLnurlMetadataItem;
 
     // Payment 1: Completed receive Lightning payment WITH preimage, LNURL metadata WITHOUT preimage
-    // This should be returned by get_pending_lnurl_preimages
+    // This should be returned by the Lightning filter query
     let payment_hash_1 =
         "pendinghash1234567890abcdef1234567890abcdef1234567890abcdef1234".to_string();
     let preimage_1 =
@@ -3145,8 +3150,20 @@ pub async fn test_pending_lnurl_preimages(storage: Box<dyn Storage>) {
         .await
         .unwrap();
 
-    // Get pending LNURL preimages
-    let pending = storage.get_pending_lnurl_preimages(100).await.unwrap();
+    // Get pending LNURL preimages via list_payments with Lightning filter
+    let pending = storage
+        .list_payments(ListPaymentsRequest {
+            type_filter: Some(vec![PaymentType::Receive]),
+            status_filter: Some(vec![PaymentStatus::Completed]),
+            payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
+                htlc_status: None,
+                has_lnurl_preimage: Some(false),
+            }]),
+            limit: Some(100),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
 
     // Should only return payment 1
     assert_eq!(
@@ -3156,27 +3173,32 @@ pub async fn test_pending_lnurl_preimages(storage: Box<dyn Storage>) {
         pending.len()
     );
 
-    let pending_item = &pending[0];
+    let pending_payment = &pending[0];
+    let Some(PaymentDetails::Lightning {
+        htlc_details: ref hd,
+        lnurl_receive_metadata: Some(ref metadata),
+        ..
+    }) = pending_payment.details
+    else {
+        panic!("Expected Lightning payment details with preimage and lnurl_receive_metadata");
+    };
+    let Some(ref pi) = hd.preimage else {
+        panic!("Expected preimage in htlc_details");
+    };
+    assert_eq!(hd.payment_hash, payment_hash_1, "Expected payment_hash_1");
+    assert_eq!(*pi, preimage_1, "Expected preimage from payment details");
     assert_eq!(
-        pending_item.payment_hash, payment_hash_1,
-        "Expected payment_hash_1"
-    );
-    assert_eq!(
-        pending_item.preimage, preimage_1,
-        "Expected preimage from payment details"
-    );
-    assert_eq!(
-        pending_item.sender_comment,
+        metadata.sender_comment,
         Some("Test comment 1".to_string()),
         "Expected sender comment from LNURL metadata"
     );
     assert_eq!(
-        pending_item.nostr_zap_request,
+        metadata.nostr_zap_request,
         Some(r#"{"kind":9734}"#.to_string()),
         "Expected zap request from LNURL metadata"
     );
     assert!(
-        pending_item.nostr_zap_receipt.is_none(),
+        metadata.nostr_zap_receipt.is_none(),
         "Expected no zap receipt yet"
     );
 
@@ -3193,7 +3215,19 @@ pub async fn test_pending_lnurl_preimages(storage: Box<dyn Storage>) {
         .unwrap();
 
     // Should now return empty
-    let pending_after = storage.get_pending_lnurl_preimages(100).await.unwrap();
+    let pending_after = storage
+        .list_payments(ListPaymentsRequest {
+            type_filter: Some(vec![PaymentType::Receive]),
+            status_filter: Some(vec![PaymentStatus::Completed]),
+            payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
+                htlc_status: None,
+                has_lnurl_preimage: Some(false),
+            }]),
+            limit: Some(100),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
     assert!(
         pending_after.is_empty(),
         "Expected no pending LNURL preimages after updating, got {}",

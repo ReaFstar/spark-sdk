@@ -20,7 +20,7 @@ use crate::{
     LnurlReceiveMetadata, LnurlWithdrawInfo, PaymentDetails, PaymentDetailsFilter, PaymentMethod,
     SparkHtlcDetails, SparkHtlcStatus,
     error::DepositClaimError,
-    persist::{PaymentMetadata, PendingLnurlPreimage, SetLnurlMetadataItem, UpdateDepositPayload},
+    persist::{PaymentMetadata, SetLnurlMetadataItem, UpdateDepositPayload},
     sync_storage::{
         IncomingChange, OutgoingChange, Record, RecordChange, RecordId, UnversionedRecordChange,
     },
@@ -875,6 +875,7 @@ impl Storage for PostgresStorage {
                     } if !s.is_empty() => Some(("s", s)),
                     PaymentDetailsFilter::Lightning {
                         htlc_status: Some(s),
+                        ..
                     } if !s.is_empty() => Some(("l", s)),
                     _ => None,
                 };
@@ -944,6 +945,22 @@ impl Storage for PostgresStorage {
                     payment_details_clauses.push(format!("t.tx_type = ${param_idx}"));
                     param_idx += 1;
                     params.push(Box::new(tx_type.to_string()));
+                }
+
+                // Filter by LNURL preimage status
+                if let PaymentDetailsFilter::Lightning {
+                    has_lnurl_preimage: Some(has_preimage),
+                    ..
+                } = payment_details_filter
+                {
+                    if *has_preimage {
+                        payment_details_clauses.push("lrm.preimage IS NOT NULL".to_string());
+                    } else {
+                        // Has lnurl metadata, lightning preimage exists, but lnurl preimage not yet sent
+                        payment_details_clauses.push(
+                            "lrm.payment_hash IS NOT NULL AND l.preimage IS NOT NULL AND lrm.preimage IS NULL".to_string(),
+                        );
+                    }
                 }
 
                 if !payment_details_clauses.is_empty() {
@@ -1385,40 +1402,6 @@ impl Storage for PostgresStorage {
                 .await?;
         }
         Ok(())
-    }
-
-    async fn get_pending_lnurl_preimages(
-        &self,
-        limit: u32,
-    ) -> Result<Vec<PendingLnurlPreimage>, StorageError> {
-        let client = self.pool.get().await.map_err(map_pool_error)?;
-        let rows = client
-            .query(
-                "SELECT l.payment_hash, l.preimage, lrm.sender_comment, lrm.nostr_zap_request, lrm.nostr_zap_receipt
-                 FROM payment_details_lightning l
-                 INNER JOIN payments p ON p.id = l.payment_id
-                 INNER JOIN lnurl_receive_metadata lrm ON l.payment_hash = lrm.payment_hash
-                 WHERE p.payment_type = 'receive'
-                   AND p.status = 'completed'
-                   AND l.preimage IS NOT NULL
-                   AND lrm.preimage IS NULL
-                 LIMIT $1",
-                &[&(i64::from(limit))],
-            )
-            .await?;
-
-        let results = rows
-            .iter()
-            .map(|row| PendingLnurlPreimage {
-                payment_hash: row.get(0),
-                preimage: row.get(1),
-                sender_comment: row.get(2),
-                nostr_zap_request: row.get(3),
-                nostr_zap_receipt: row.get(4),
-            })
-            .collect();
-
-        Ok(results)
     }
 
     async fn add_outgoing_change(
@@ -2397,6 +2380,7 @@ mod tests {
             .list_payments(ListPaymentsRequest {
                 payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
                     htlc_status: Some(vec![SparkHtlcStatus::WaitingForPreimage]),
+                    has_lnurl_preimage: None,
                 }]),
                 ..Default::default()
             })
@@ -2409,6 +2393,7 @@ mod tests {
             .list_payments(ListPaymentsRequest {
                 payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
                     htlc_status: Some(vec![SparkHtlcStatus::PreimageShared]),
+                    has_lnurl_preimage: None,
                 }]),
                 ..Default::default()
             })
@@ -2421,6 +2406,7 @@ mod tests {
             .list_payments(ListPaymentsRequest {
                 payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
                     htlc_status: Some(vec![SparkHtlcStatus::Returned]),
+                    has_lnurl_preimage: None,
                 }]),
                 ..Default::default()
             })

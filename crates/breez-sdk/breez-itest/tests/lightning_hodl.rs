@@ -79,6 +79,7 @@ async fn test_01_lightning_hodl_success(
             type_filter: Some(vec![PaymentType::Receive]),
             payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
                 htlc_status: Some(vec![SparkHtlcStatus::WaitingForPreimage]),
+                has_lnurl_preimage: None,
             }]),
             ..Default::default()
         })

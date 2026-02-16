@@ -209,6 +209,7 @@ pub enum _PaymentDetailsFilter {
     },
     Lightning {
         htlc_status: Option<Vec<SparkHtlcStatus>>,
+        has_lnurl_preimage: Option<bool>,
     },
 }
 

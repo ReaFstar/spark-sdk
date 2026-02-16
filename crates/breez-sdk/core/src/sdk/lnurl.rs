@@ -3,10 +3,11 @@ use tokio_with_wasm::alias as tokio;
 use tracing::{debug, error, info};
 
 use crate::{
-    FeePolicy, InputType, LnurlAuthRequestDetails, LnurlCallbackStatus, LnurlPayInfo,
-    LnurlPayRequest, LnurlPayResponse, LnurlWithdrawInfo, LnurlWithdrawRequest,
-    LnurlWithdrawResponse, PrepareLnurlPayRequest, PrepareLnurlPayResponse, SendPaymentMethod,
-    SetLnurlMetadataItem, WaitForPaymentIdentifier,
+    FeePolicy, InputType, ListPaymentsRequest, LnurlAuthRequestDetails, LnurlCallbackStatus,
+    LnurlPayInfo, LnurlPayRequest, LnurlPayResponse, LnurlWithdrawInfo, LnurlWithdrawRequest,
+    LnurlWithdrawResponse, PaymentDetails, PaymentDetailsFilter, PaymentStatus, PaymentType,
+    PrepareLnurlPayRequest, PrepareLnurlPayResponse, SendPaymentMethod, SetLnurlMetadataItem,
+    WaitForPaymentIdentifier,
     error::SdkError,
     events::SdkEvent,
     models::{
@@ -530,7 +531,19 @@ impl BreezSdk {
         let limit = 100;
         loop {
             // Query only payments that need their preimage sent to the server
-            let pending = self.storage.get_pending_lnurl_preimages(limit).await?;
+            let pending = self
+                .storage
+                .list_payments(ListPaymentsRequest {
+                    type_filter: Some(vec![PaymentType::Receive]),
+                    status_filter: Some(vec![PaymentStatus::Completed]),
+                    payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
+                        htlc_status: None,
+                        has_lnurl_preimage: Some(false),
+                    }]),
+                    limit: Some(limit),
+                    ..Default::default()
+                })
+                .await?;
 
             debug!("Got {} pending lnurl preimages", pending.len());
             if pending.is_empty() {
@@ -539,39 +552,49 @@ impl BreezSdk {
 
             let len = pending.len();
 
-            for item in pending {
+            for payment in pending {
+                let Some(PaymentDetails::Lightning {
+                    htlc_details,
+                    lnurl_receive_metadata: Some(metadata),
+                    ..
+                }) = payment.details
+                else {
+                    continue;
+                };
+
+                let Some(preimage) = htlc_details.preimage else {
+                    continue;
+                };
+
                 // Notify the LNURL server about the paid invoice
-                if let Err(e) = lnurl_server_client
-                    .notify_invoice_paid(&item.preimage)
-                    .await
-                {
+                if let Err(e) = lnurl_server_client.notify_invoice_paid(&preimage).await {
                     error!(
                         "Failed to notify invoice paid for payment_hash {}: {}",
-                        item.payment_hash, e
+                        htlc_details.payment_hash, e
                     );
                     continue;
                 }
 
                 debug!(
                     "Notified LNURL server about paid invoice for payment_hash {}",
-                    item.payment_hash
+                    htlc_details.payment_hash
                 );
 
                 // Update the LNURL metadata to mark the preimage as sent
                 if let Err(e) = self
                     .storage
                     .set_lnurl_metadata(vec![SetLnurlMetadataItem {
-                        payment_hash: item.payment_hash.clone(),
-                        sender_comment: item.sender_comment,
-                        nostr_zap_request: item.nostr_zap_request,
-                        nostr_zap_receipt: item.nostr_zap_receipt,
-                        preimage: Some(item.preimage),
+                        payment_hash: htlc_details.payment_hash.clone(),
+                        sender_comment: metadata.sender_comment,
+                        nostr_zap_request: metadata.nostr_zap_request,
+                        nostr_zap_receipt: metadata.nostr_zap_receipt,
+                        preimage: Some(preimage),
                     }])
                     .await
                 {
                     error!(
                         "Failed to update LNURL metadata for payment_hash {}: {}",
-                        item.payment_hash, e
+                        htlc_details.payment_hash, e
                     );
                 }
             }
