@@ -782,26 +782,22 @@ where
                 return Err(lnurl_error("internal server error"));
             }
 
-            // Subscribe to user for invoice monitoring if nostr is enabled
-            if let Some(nostr_keys) = &state.nostr_keys {
-                crate::background::create_rpc_client_and_subscribe(
-                    state.db.clone(),
-                    pubkey,
-                    &state.connection_manager,
-                    &state.coordinator,
-                    state.signer.clone(),
-                    state.session_manager.clone(),
-                    state.service_provider.clone(),
-                    nostr_keys.clone(),
-                    Arc::clone(&state.subscribed_keys),
-                    state.invoice_paid_trigger.clone(),
-                )
-                .await
-                .map_err(|e| {
-                    error!("failed to subscribe to user for invoice monitoring: {}", e);
-                    lnurl_error("internal server error")
-                })?;
-            }
+            crate::background::create_rpc_client_and_subscribe(
+                state.db.clone(),
+                pubkey,
+                &state.connection_manager,
+                &state.coordinator,
+                state.signer.clone(),
+                state.session_manager.clone(),
+                state.service_provider.clone(),
+                Arc::clone(&state.subscribed_keys),
+                state.invoice_paid_trigger.clone(),
+            )
+            .await
+            .map_err(|e| {
+                error!("failed to subscribe to user for invoice monitoring: {}", e);
+                lnurl_error("internal server error")
+            })?;
 
             // Build verify URL
             Some(format!(

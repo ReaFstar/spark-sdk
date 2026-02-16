@@ -262,7 +262,6 @@ where
                 signer.clone(),
                 session_manager.clone(),
                 Arc::clone(&service_provider),
-                nostr_keys.clone(),
                 Arc::clone(&subscribed_keys),
                 invoice_paid_trigger.clone(),
             )

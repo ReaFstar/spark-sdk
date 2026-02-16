@@ -36,7 +36,6 @@ pub async fn create_rpc_client_and_subscribe<DB>(
     signer: Arc<DefaultSigner>,
     session_manager: Arc<InMemorySessionManager>,
     service_provider: Arc<ServiceProvider>,
-    nostr_keys: nostr::Keys,
     subscribed_keys: Arc<Mutex<HashSet<String>>>,
     trigger: watch::Sender<()>,
 ) -> Result<(), anyhow::Error>
@@ -51,7 +50,6 @@ where
         user_pubkey,
         rpc_client,
         service_provider,
-        nostr_keys,
         subscribed_keys,
         trigger,
     );
@@ -66,7 +64,6 @@ fn subscribe_to_user_for_invoices<DB>(
     user_pk: bitcoin::secp256k1::PublicKey,
     rpc: SparkRpcClient,
     ssp_client: Arc<ServiceProvider>,
-    _nostr_keys: nostr::Keys,
     subscribed_keys: Arc<Mutex<HashSet<String>>>,
     trigger: watch::Sender<()>,
 ) where
