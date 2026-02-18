@@ -8,7 +8,7 @@ mod payments;
 mod sync;
 
 use bitflags::bitflags;
-use breez_sdk_common::{buy::BuyBitcoinProviderApi, fiat::FiatService};
+use breez_sdk_common::{buy::BuyBitcoinProviderApi, fiat::FiatService, sync::SigningClient};
 use platform_utils::HttpClient;
 use spark_wallet::SparkWallet;
 use std::sync::Arc;
@@ -18,8 +18,8 @@ use tokio_with_wasm::alias as tokio;
 use crate::{
     BitcoinChainService, ExternalInputParser, InputType, Logger, Network, OptimizationConfig,
     error::SdkError, events::EventEmitter, lnurl::LnurlServerClient, logger, models::Config,
-    nostr::NostrClient, persist::Storage, stable_balance::StableBalance,
-    token_conversion::TokenConverter,
+    nostr::NostrClient, persist::Storage, signer::lnurl_auth::LnurlAuthSignerAdapter,
+    stable_balance::StableBalance, token_conversion::TokenConverter,
 };
 
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
@@ -103,7 +103,7 @@ pub struct BreezSdk {
     pub(crate) fiat_service: Arc<dyn FiatService>,
     pub(crate) lnurl_client: Arc<dyn HttpClient>,
     pub(crate) lnurl_server_client: Option<Arc<dyn LnurlServerClient>>,
-    pub(crate) lnurl_auth_signer: Arc<crate::signer::lnurl_auth::LnurlAuthSignerAdapter>,
+    pub(crate) lnurl_auth_signer: Arc<LnurlAuthSignerAdapter>,
     pub(crate) event_emitter: Arc<EventEmitter>,
     pub(crate) shutdown_sender: watch::Sender<()>,
     pub(crate) sync_trigger: tokio::sync::broadcast::Sender<SyncRequest>,
@@ -124,11 +124,12 @@ pub(crate) struct BreezSdkParams {
     pub fiat_service: Arc<dyn FiatService>,
     pub lnurl_client: Arc<dyn HttpClient>,
     pub lnurl_server_client: Option<Arc<dyn LnurlServerClient>>,
-    pub lnurl_auth_signer: Arc<crate::signer::lnurl_auth::LnurlAuthSignerAdapter>,
+    pub lnurl_auth_signer: Arc<LnurlAuthSignerAdapter>,
     pub shutdown_sender: watch::Sender<()>,
     pub spark_wallet: Arc<SparkWallet>,
     pub event_emitter: Arc<EventEmitter>,
     pub nostr_client: Arc<NostrClient>,
+    pub sync_signing_client: Option<SigningClient>,
     pub buy_bitcoin_provider: Arc<dyn BuyBitcoinProviderApi>,
 }
 
