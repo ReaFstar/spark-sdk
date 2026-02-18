@@ -21,6 +21,7 @@ It’s a nodeless integration that offers a self-custodial, end-to-end solution 
 - [x] Send and receive Spark payments (BTC)
 - [x] Issue, send and receive Spark tokens (BTKN)
 - [x] On-chain interoperability
+- [x] Convert Spark tokens (BTKN) to bitcoin and vice versa 
 - [x] Bindings to all popular languages & frameworks
 - [x] Keys are only held by users
 - [x] Multi-app & multi-device support via real-time sync service 
@@ -113,10 +114,12 @@ Contributions are always welcome. Please read our [contribution guide](CONTRIBUT
 - [x] External signer
 - [x] LNURL-Auth
 - [x] Fiat on-ramp
+- [x] BTC <> USDB swaps
 - [ ] Seedless restore
+- [ ] Stable balance
+- [ ] USDT0 support
 - [ ] NWC
 - [ ] WebLN
-- [ ] BTC <> USDX swaps
 - [ ] Hodl invoice support 
 - [ ] Bolt12
 - [ ] Add additional fees via a dedicated portal
