@@ -17,6 +17,7 @@ It’s a nodeless integration that offers a self-custodial, end-to-end solution 
 - [x] Send and receive Spark payments (BTC)
 - [x] Issue, send and receive Spark tokens (BTKN)
 - [x] On-chain interoperability
+- [x] Convert Spark tokens (BTKN) to bitcoin and vice versa
 - [x] Bindings to all popular languages & frameworks
 - [x] Keys are only held by users
 - [x] Multi-app & multi-device support via real-time sync service 
