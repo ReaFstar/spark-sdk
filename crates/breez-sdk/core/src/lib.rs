@@ -8,7 +8,6 @@ mod issuer;
 mod lnurl;
 mod logger;
 mod models;
-mod nostr;
 mod persist;
 mod realtime_sync;
 mod sdk;

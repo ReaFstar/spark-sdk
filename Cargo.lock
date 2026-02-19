@@ -733,7 +733,6 @@ dependencies = [
  "k256",
  "lnurl-models",
  "macros",
- "nostr",
  "openssl",
  "platform-utils",
  "rcgen",
