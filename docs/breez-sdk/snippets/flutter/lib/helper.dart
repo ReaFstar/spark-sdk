@@ -13,6 +13,7 @@ extension ConfigCopyWith on Config {
     bool? privateEnabledDefault,
     OptimizationConfig? optimizationConfig,
     StableBalanceConfig? stableBalanceConfig,
+    int? maxConcurrentClaims,
   }) {
     return Config(
       apiKey: apiKey ?? this.apiKey,
