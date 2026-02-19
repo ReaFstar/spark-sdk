@@ -154,7 +154,6 @@ where
             pubkey: pubkey.to_string(),
             name: username,
             description: payload.description,
-            nostr_pubkey: None,
             no_invoice_paid_support: payload.no_invoice_paid_support,
         };
 
@@ -248,7 +247,6 @@ where
                     lightning_address: format!("{}@{}", user.name, &user.domain),
                     username: user.name,
                     description: user.description,
-                    nostr_pubkey: user.nostr_pubkey,
                 }))
             }
             None => Err((

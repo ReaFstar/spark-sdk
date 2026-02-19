@@ -19,7 +19,6 @@ pub struct RecoverLnurlPayResponse {
     pub lightning_address: String,
     pub username: String,
     pub description: String,
-    pub nostr_pubkey: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -28,7 +27,6 @@ pub struct RegisterLnurlPayRequest {
     pub signature: String,
     pub timestamp: Option<u64>,
     pub description: String,
-    pub nostr_pubkey: Option<String>,
     /// When true, the server won't track invoice payments for this user (LUD-21 and NIP-57 disabled)
     #[serde(default)]
     pub no_invoice_paid_support: bool,

@@ -78,7 +78,6 @@ impl BreezSdk {
             initial_synced_watcher,
             external_input_parsers,
             spark_private_mode_initialized: Arc::new(OnceCell::new()),
-            nostr_client: params.nostr_client,
             token_converter,
             stable_balance,
             buy_bitcoin_provider: params.buy_bitcoin_provider,

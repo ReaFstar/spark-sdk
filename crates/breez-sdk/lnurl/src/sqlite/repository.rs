@@ -33,7 +33,7 @@ impl crate::repository::LnurlRepository for LnurlRepository {
         name: &str,
     ) -> Result<Option<User>, LnurlRepositoryError> {
         let maybe_user = sqlx::query(
-            "SELECT pubkey, name, description, nostr_pubkey, no_invoice_paid_support
+            "SELECT pubkey, name, description, no_invoice_paid_support
             FROM users
             WHERE domain = $1 AND name = $2",
         )
@@ -47,8 +47,7 @@ impl crate::repository::LnurlRepository for LnurlRepository {
                 pubkey: row.try_get(0)?,
                 name: row.try_get(1)?,
                 description: row.try_get(2)?,
-                nostr_pubkey: row.try_get(3)?,
-                no_invoice_paid_support: row.try_get::<i32, _>(4)? != 0,
+                no_invoice_paid_support: row.try_get::<i32, _>(3)? != 0,
             })
         })
         .transpose()?;
@@ -61,7 +60,7 @@ impl crate::repository::LnurlRepository for LnurlRepository {
         pubkey: &str,
     ) -> Result<Option<User>, LnurlRepositoryError> {
         let maybe_user = sqlx::query(
-            "SELECT pubkey, name, description, nostr_pubkey, no_invoice_paid_support
+            "SELECT pubkey, name, description, no_invoice_paid_support
                 FROM users
                 WHERE domain = $1 AND pubkey = $2",
         )
@@ -75,8 +74,7 @@ impl crate::repository::LnurlRepository for LnurlRepository {
                 pubkey: row.try_get(0)?,
                 name: row.try_get(1)?,
                 description: row.try_get(2)?,
-                nostr_pubkey: row.try_get(3)?,
-                no_invoice_paid_support: row.try_get::<i32, _>(4)? != 0,
+                no_invoice_paid_support: row.try_get::<i32, _>(3)? != 0,
             })
         })
         .transpose()?;
@@ -85,14 +83,13 @@ impl crate::repository::LnurlRepository for LnurlRepository {
 
     async fn upsert_user(&self, user: &User) -> Result<(), LnurlRepositoryError> {
         sqlx::query(
-            "REPLACE INTO users (domain, pubkey, name, description, nostr_pubkey, no_invoice_paid_support, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            "REPLACE INTO users (domain, pubkey, name, description, no_invoice_paid_support, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6)",
         )
         .bind(&user.domain)
         .bind(&user.pubkey)
         .bind(&user.name)
         .bind(&user.description)
-        .bind(&user.nostr_pubkey)
         .bind(i32::from(user.no_invoice_paid_support))
         .bind(now())
         .execute(&self.pool)

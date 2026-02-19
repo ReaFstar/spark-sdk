@@ -33,7 +33,7 @@ impl crate::repository::LnurlRepository for LnurlRepository {
         name: &str,
     ) -> Result<Option<User>, LnurlRepositoryError> {
         let maybe_user = sqlx::query(
-            "SELECT pubkey, name, description, nostr_pubkey, no_invoice_paid_support
+            "SELECT pubkey, name, description, no_invoice_paid_support
              FROM users
              WHERE domain = $1 AND name = $2",
         )
@@ -47,8 +47,7 @@ impl crate::repository::LnurlRepository for LnurlRepository {
                 pubkey: row.try_get(0)?,
                 name: row.try_get(1)?,
                 description: row.try_get(2)?,
-                nostr_pubkey: row.try_get(3)?,
-                no_invoice_paid_support: row.try_get(4)?,
+                no_invoice_paid_support: row.try_get(3)?,
             })
         })
         .transpose()?;
@@ -61,7 +60,7 @@ impl crate::repository::LnurlRepository for LnurlRepository {
         pubkey: &str,
     ) -> Result<Option<User>, LnurlRepositoryError> {
         let maybe_user = sqlx::query(
-            "SELECT pubkey, name, description, nostr_pubkey, no_invoice_paid_support
+            "SELECT pubkey, name, description, no_invoice_paid_support
                 FROM users
                 WHERE domain = $1 AND pubkey = $2",
         )
@@ -75,8 +74,7 @@ impl crate::repository::LnurlRepository for LnurlRepository {
                 pubkey: row.try_get(0)?,
                 name: row.try_get(1)?,
                 description: row.try_get(2)?,
-                nostr_pubkey: row.try_get(3)?,
-                no_invoice_paid_support: row.try_get(4)?,
+                no_invoice_paid_support: row.try_get(3)?,
             })
         })
         .transpose()?;
@@ -85,12 +83,11 @@ impl crate::repository::LnurlRepository for LnurlRepository {
 
     async fn upsert_user(&self, user: &User) -> Result<(), LnurlRepositoryError> {
         sqlx::query(
-            "INSERT INTO users (domain, pubkey, name, description, nostr_pubkey, no_invoice_paid_support, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
+            "INSERT INTO users (domain, pubkey, name, description, no_invoice_paid_support, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6)
              ON CONFLICT(domain, pubkey) DO UPDATE
              SET name = excluded.name
              ,   description = excluded.description
-             ,   nostr_pubkey = excluded.nostr_pubkey
              ,   no_invoice_paid_support = excluded.no_invoice_paid_support
              ,   updated_at = excluded.updated_at",
         )
@@ -98,7 +95,6 @@ impl crate::repository::LnurlRepository for LnurlRepository {
         .bind(&user.pubkey)
         .bind(&user.name)
         .bind(&user.description)
-        .bind(&user.nostr_pubkey)
         .bind(user.no_invoice_paid_support)
         .bind(now())
         .execute(&self.pool)
