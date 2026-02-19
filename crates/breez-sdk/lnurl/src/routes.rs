@@ -26,7 +26,7 @@ use std::sync::Arc;
 use tracing::{debug, error, trace, warn};
 
 use crate::{
-    invoice_paid::{create_invoice, handle_invoice_paid},
+    invoice_paid::{HandleInvoicePaidError, create_invoice, handle_invoice_paid},
     repository::LnurlSenderComment,
     time::{now_millis, now_u64},
     zap::Zap,
@@ -372,20 +372,31 @@ where
 
         // If we have a preimage, call the invoice paid handler for LUD-21 compatibility
         // This ensures the preimage is stored in the invoices table
-        if let Some(preimage) = &preimage_from_receipt
-            && let Err(e) = handle_invoice_paid(
+        if let Some(preimage) = &preimage_from_receipt {
+            match handle_invoice_paid(
                 &state.db,
                 &payment_hash,
                 preimage,
                 &state.invoice_paid_trigger,
             )
             .await
-        {
-            // Log but don't fail - this is for backward compatibility
-            debug!(
-                "Failed to handle invoice paid from zap receipt for {}: {}",
-                payment_hash, e
-            );
+            {
+                Err(HandleInvoicePaidError::InvalidPreimage(_)) => {
+                    trace!("invalid preimage in zap receipt for {}", payment_hash);
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({"error": "invalid preimage"})),
+                    ));
+                }
+                Err(e) => {
+                    // Log but don't fail - this is for backward compatibility
+                    debug!(
+                        "Failed to handle invoice paid from zap receipt for {}: {}",
+                        payment_hash, e
+                    );
+                }
+                Ok(()) => {}
+            }
         }
 
         // Check if zap receipt already exists

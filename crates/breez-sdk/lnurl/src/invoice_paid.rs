@@ -1,8 +1,32 @@
+use bitcoin::hashes::{Hash, sha256};
 use tokio::sync::watch;
 use tracing::{debug, error};
 
 use crate::repository::{Invoice, LnurlRepository, LnurlRepositoryError, NewlyPaid};
 use crate::time::now_millis;
+
+#[derive(Debug, thiserror::Error)]
+pub enum HandleInvoicePaidError {
+    #[error("invalid preimage: {0}")]
+    InvalidPreimage(String),
+    #[error(transparent)]
+    Repository(#[from] LnurlRepositoryError),
+}
+
+/// Verify that the SHA-256 hash of the preimage matches the expected payment hash.
+/// Both values are hex-encoded strings.
+fn verify_preimage(payment_hash: &str, preimage: &str) -> Result<(), HandleInvoicePaidError> {
+    let preimage_bytes = hex::decode(preimage).map_err(|e| {
+        HandleInvoicePaidError::InvalidPreimage(format!("could not hex-decode preimage: {e}"))
+    })?;
+    let computed_hash = sha256::Hash::hash(&preimage_bytes).to_string();
+    if computed_hash != payment_hash {
+        return Err(HandleInvoicePaidError::InvalidPreimage(
+            "preimage does not match payment hash".to_string(),
+        ));
+    }
+    Ok(())
+}
 
 /// Handle an invoice being paid by storing the preimage and queueing for background processing.
 pub async fn handle_invoice_paid<DB>(
@@ -10,10 +34,12 @@ pub async fn handle_invoice_paid<DB>(
     payment_hash: &str,
     preimage: &str,
     trigger: &watch::Sender<()>,
-) -> Result<(), LnurlRepositoryError>
+) -> Result<(), HandleInvoicePaidError>
 where
     DB: LnurlRepository + Clone + Send + Sync + 'static,
 {
+    verify_preimage(payment_hash, preimage)?;
+
     let now = now_millis();
 
     // Get the existing invoice
