@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-pub mod nostr;
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CheckUsernameAvailableResponse {
     pub available: bool,
