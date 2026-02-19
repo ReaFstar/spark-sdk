@@ -57,3 +57,11 @@ async def configure_stable_balance():
     )
     # ANCHOR_END: stable-balance-config
     logging.info(f"Config: {config}")
+
+async def configure_no_invoice_paid_support():
+    # ANCHOR: no-invoice-paid-support
+    # Disable invoice paid notifications to LNURL server
+    config = default_config(network=Network.MAINNET)
+    config.no_invoice_paid_support = True
+    # ANCHOR_END: no-invoice-paid-support
+    logging.info(f"Config: {config}")

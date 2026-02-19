@@ -59,3 +59,12 @@ Future<void> configureStableBalance() async {
   // ANCHOR_END: stable-balance-config
   print(config);
 }
+
+Future<void> configureNoInvoicePaidSupport() async {
+  // ANCHOR: no-invoice-paid-support
+  // Disable invoice paid notifications to LNURL server
+  var config = defaultConfig(network: Network.mainnet)
+      .copyWith(noInvoicePaidSupport: true);
+  // ANCHOR_END: no-invoice-paid-support
+  print(config);
+}

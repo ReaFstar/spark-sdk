@@ -53,3 +53,12 @@ func configureStableBalance() async throws {
     // ANCHOR_END: stable-balance-config
     print("Config: \(config)")
 }
+
+func configureNoInvoicePaidSupport() async throws {
+    // ANCHOR: no-invoice-paid-support
+    // Disable invoice paid notifications to LNURL server
+    var config = defaultConfig(network: Network.mainnet)
+    config.noInvoicePaidSupport = true
+    // ANCHOR_END: no-invoice-paid-support
+    print("Config: \(config)")
+}

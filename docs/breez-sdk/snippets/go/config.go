@@ -67,3 +67,12 @@ func ConfigureStableBalance() {
 	// ANCHOR_END: stable-balance-config
 	log.Printf("Config: %+v", config)
 }
+
+func ConfigureNoInvoicePaidSupport() {
+	// ANCHOR: no-invoice-paid-support
+	// Disable invoice paid notifications to LNURL server
+	config := breez_sdk_spark.DefaultConfig(breez_sdk_spark.NetworkMainnet)
+	config.NoInvoicePaidSupport = true
+	// ANCHOR_END: no-invoice-paid-support
+	log.Printf("Config: %+v", config)
+}

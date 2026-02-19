@@ -54,9 +54,19 @@ const exampleConfigureStableBalance = async () => {
   console.log('Config:', config)
 }
 
+const exampleConfigureNoInvoicePaidSupport = async () => {
+  // ANCHOR: no-invoice-paid-support
+  // Disable invoice paid notifications to LNURL server
+  const config = defaultConfig('mainnet')
+  config.noInvoicePaidSupport = true
+  // ANCHOR_END: no-invoice-paid-support
+  console.log('Config:', config)
+}
+
 export {
   exampleConfigureSdk,
   exampleConfigurePrivateEnabledDefault,
   exampleConfigureOptimizationConfiguration,
-  exampleConfigureStableBalance
+  exampleConfigureStableBalance,
+  exampleConfigureNoInvoicePaidSupport
 }

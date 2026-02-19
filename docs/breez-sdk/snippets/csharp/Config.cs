@@ -64,5 +64,16 @@ namespace BreezSdkSnippets
             };
             // ANCHOR_END: stable-balance-config
         }
+
+        void ConfigureNoInvoicePaidSupport()
+        {
+            // ANCHOR: no-invoice-paid-support
+            // Disable invoice paid notifications to LNURL server
+            var config = BreezSdkSparkMethods.DefaultConfig(Network.Mainnet) with
+            {
+                noInvoicePaidSupport = true
+            };
+            // ANCHOR_END: no-invoice-paid-support
+        }
     }
 }
