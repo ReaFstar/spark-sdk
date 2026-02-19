@@ -1969,7 +1969,7 @@ class IndexedDBStorage {
             // Pending: has lnurl metadata, has lightning preimage, but lnurl preimage not yet sent
             if (
               !details.lnurlReceiveMetadata ||
-              !details.preimage ||
+              !details.htlcDetails?.preimage ||
               details.lnurlReceiveMetadata.preimage
             ) {
               continue;
