@@ -1278,16 +1278,16 @@ async fn test_10_lud21_verify(
     info!("Calling LNURL callback: {callback_url}");
 
     let http_client = DefaultHttpClient::default();
-    let response = http_client
+    let callback_response = http_client
         .get(callback_url.clone(), None)
         .await
-        .map_err(|e| anyhow::anyhow!("Callback request failed: {e:?}"))?;
+        .map_err(|e| anyhow::anyhow!("Failed to send callback request: {e:?}"))?;
 
-    if !response.is_success() {
-        anyhow::bail!("Callback request failed: {}", response.status);
+    if !callback_response.is_success() {
+        anyhow::bail!("Callback request failed: {}", callback_response.status);
     }
 
-    let callback_json: serde_json::Value = response.json()?;
+    let callback_json: serde_json::Value = callback_response.json()?;
     info!("Callback response: {}", callback_json);
 
     // Extract the invoice and verify URL
@@ -1307,11 +1307,11 @@ async fn test_10_lud21_verify(
     info!("Got verify URL: {verify_url}");
 
     // Before payment: verify should return settled=false
-    let response = http_client
+    let verify_response = http_client
         .get(verify_url.clone(), None)
         .await
-        .map_err(|e| anyhow::anyhow!("Verify request failed: {e:?}"))?;
-    let verify_json: serde_json::Value = response.json()?;
+        .map_err(|e| anyhow::anyhow!("Failed to send verify request: {e:?}"))?;
+    let verify_json: serde_json::Value = verify_response.json()?;
     info!("Verify response (before payment): {}", verify_json);
 
     assert_eq!(
@@ -1387,11 +1387,11 @@ async fn test_10_lud21_verify(
     // Poll until the preimage is available (server may need time to process)
     let final_verify = wait_for(
         || async {
-            let response = http_client
+            let verify_response = http_client
                 .get(verify_url.clone(), None)
                 .await
-                .map_err(|e| anyhow::anyhow!("Verify request failed: {e:?}"))?;
-            let verify_json: serde_json::Value = response.json()?;
+                .map_err(|e| anyhow::anyhow!("Failed to send verify request: {e:?}"))?;
+            let verify_json: serde_json::Value = verify_response.json()?;
             debug!("Verify response (polling): {}", verify_json);
 
             if verify_json["settled"].as_bool() != Some(true) {
