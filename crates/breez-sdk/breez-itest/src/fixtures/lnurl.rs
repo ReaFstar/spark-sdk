@@ -96,6 +96,11 @@ impl LnurlFixture {
             .with_env_var("BREEZ_LNURL_DOMAINS", "")
             // Use HTTP scheme for testing
             .with_env_var("BREEZ_LNURL_SCHEME", "http")
+            // Set a test nostr secret key for zap receipt support (nsec encoding of key 0x00...01)
+            .with_env_var(
+                "BREEZ_LNURL_NSEC",
+                "nsec1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqsmhltgl",
+            )
             .with_env_var("BREEZ_LNURL_MIN_SENDABLE", "1000")
             .with_env_var("BREEZ_LNURL_MAX_SENDABLE", "1000000000");
 
