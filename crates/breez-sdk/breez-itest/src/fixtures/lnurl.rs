@@ -2,7 +2,7 @@ use crate::fixtures::docker::{DockerImageConfig, build_docker_image};
 use anyhow::Result;
 use testcontainers::{
     ContainerAsync, GenericImage, ImageExt,
-    core::{ContainerPort, WaitFor, wait::LogWaitStrategy},
+    core::{ContainerPort, Host, WaitFor, wait::LogWaitStrategy},
     runners::AsyncRunner,
 };
 use tracing::info;
@@ -102,7 +102,9 @@ impl LnurlFixture {
                 "nsec1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqsmhltgl",
             )
             .with_env_var("BREEZ_LNURL_MIN_SENDABLE", "1000")
-            .with_env_var("BREEZ_LNURL_MAX_SENDABLE", "1000000000");
+            .with_env_var("BREEZ_LNURL_MAX_SENDABLE", "1000000000")
+            // Allow the container to reach services on the host via host.docker.internal
+            .with_host("host.docker.internal", Host::HostGateway);
 
         let container = container.start().await?;
 

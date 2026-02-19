@@ -3,12 +3,14 @@ use std::{borrow::Cow, sync::Arc};
 use anyhow::Result;
 use breez_sdk_itest::*;
 use breez_sdk_spark::*;
+use futures::{SinkExt, StreamExt};
 use nostr::util::JsonUtil;
 use platform_utils::{DefaultHttpClient, HttpClient};
 use rand::RngCore;
 use rstest::*;
 use tempdir::TempDir;
 use tracing::{debug, info};
+use warp::Filter;
 
 // ---------------------
 // Fixtures
@@ -388,6 +390,39 @@ async fn test_05_lnurl_payment_flow(
     Ok(())
 }
 
+/// Start a minimal nostr relay that accepts EVENT messages and responds with OK.
+/// Returns the port the relay is listening on (bound to 0.0.0.0).
+async fn start_nostr_relay() -> Result<u16> {
+    let ws_route = warp::ws().map(|ws: warp::ws::Ws| {
+        ws.on_upgrade(|websocket| async move {
+            let (mut tx, mut rx) = websocket.split();
+            while let Some(Ok(msg)) = rx.next().await {
+                if let Ok(text) = msg.to_str()
+                    && let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(text)
+                    && arr.first().and_then(|v| v.as_str()) == Some("EVENT")
+                    && let Some(id) = arr
+                        .get(1)
+                        .and_then(|e| e.get("id"))
+                        .and_then(|v| v.as_str())
+                {
+                    let ok_msg = serde_json::json!(["OK", id, true, ""]);
+                    let _ = tx.send(warp::ws::Message::text(ok_msg.to_string())).await;
+                }
+            }
+        })
+    });
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:0").await?;
+    let port = listener.local_addr()?.port();
+    tokio::spawn(async move {
+        warp::serve(ws_route)
+            .serve_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+            .await;
+    });
+
+    Ok(port)
+}
+
 /// Test client-side zap receipt creation and publishing
 /// Bob has private mode enabled (prefer_spark_over_lightning = true)
 /// Alice sends a zap to Bob's lightning address
@@ -463,6 +498,11 @@ async fn test_06_client_side_zap_receipt(
     assert!(details.pay_request.nostr_pubkey.is_some());
     let bob_nostr_pubkey = details.pay_request.nostr_pubkey.unwrap();
 
+    // Start a minimal nostr relay so the LNURL server can publish zap receipts
+    let relay_port = start_nostr_relay().await?;
+    let relay_url = format!("ws://host.docker.internal:{relay_port}");
+    info!("Started nostr relay at {relay_url}");
+
     // Create a properly signed zap request (NIP-57 kind 9734 event) using the nostr crate
     let payment_amount_sats = 1000_u64;
 
@@ -482,8 +522,7 @@ async fn test_06_client_side_zap_receipt(
             ))
             .tag(nostr::Tag::custom(
                 nostr::TagKind::Custom(std::borrow::Cow::Borrowed("relays")),
-                // Note there's nothing listening on this relay, but this makes the test pass.
-                vec!["ws://localhost:7777".to_string()],
+                vec![relay_url],
             ));
 
     let zap_request_event = zap_request_builder.sign_with_keys(&alice_keys)?;
