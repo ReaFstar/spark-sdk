@@ -29,6 +29,7 @@ extension ConfigCopyWith on Config {
           privateEnabledDefault ?? this.privateEnabledDefault,
       optimizationConfig: optimizationConfig ?? this.optimizationConfig,
       stableBalanceConfig: stableBalanceConfig ?? this.stableBalanceConfig,
+      maxConcurrentClaims: maxConcurrentClaims ?? this.maxConcurrentClaims,
     );
   }
 }
