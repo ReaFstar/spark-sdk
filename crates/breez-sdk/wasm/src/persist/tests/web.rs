@@ -499,6 +499,7 @@ async fn test_migration_from_v10_to_v11() {
         breez_sdk_spark::ListPaymentsRequest {
             payment_details_filter: Some(vec![breez_sdk_spark::PaymentDetailsFilter::Lightning {
                 htlc_status: Some(vec![breez_sdk_spark::SparkHtlcStatus::WaitingForPreimage]),
+                has_lnurl_preimage: None,
             }]),
             ..Default::default()
         },
@@ -513,6 +514,7 @@ async fn test_migration_from_v10_to_v11() {
         breez_sdk_spark::ListPaymentsRequest {
             payment_details_filter: Some(vec![breez_sdk_spark::PaymentDetailsFilter::Lightning {
                 htlc_status: Some(vec![breez_sdk_spark::SparkHtlcStatus::PreimageShared]),
+                has_lnurl_preimage: None,
             }]),
             ..Default::default()
         },
@@ -527,6 +529,7 @@ async fn test_migration_from_v10_to_v11() {
         breez_sdk_spark::ListPaymentsRequest {
             payment_details_filter: Some(vec![breez_sdk_spark::PaymentDetailsFilter::Lightning {
                 htlc_status: Some(vec![breez_sdk_spark::SparkHtlcStatus::Returned]),
+                has_lnurl_preimage: None,
             }]),
             ..Default::default()
         },
