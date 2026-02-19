@@ -10,7 +10,7 @@ use rusqlite_migration::{M, Migrations, SchemaVersion};
 use crate::{
     AssetFilter, ConversionInfo, DepositInfo, ListPaymentsRequest, LnurlPayInfo,
     LnurlReceiveMetadata, LnurlWithdrawInfo, PaymentDetails, PaymentDetailsFilter, PaymentMethod,
-    TokenTransactionType,
+    SparkHtlcDetails, SparkHtlcStatus, TokenTransactionType,
     error::DepositClaimError,
     persist::{PaymentMetadata, SetLnurlMetadataItem, UpdateDepositPayload},
     sync_storage::{
@@ -286,6 +286,21 @@ impl SqliteStorage {
              DELETE FROM sync_state;
              UPDATE sync_revision SET revision = 0;
              DELETE FROM settings WHERE key = 'sync_initial_complete';",
+            "ALTER TABLE payment_details_lightning ADD COLUMN htlc_status TEXT NOT NULL DEFAULT 'WaitingForPreimage';
+             ALTER TABLE payment_details_lightning ADD COLUMN htlc_expiry_time INTEGER NOT NULL DEFAULT 0;",
+            // Backfill htlc_status for existing Lightning payments where it's NULL.
+            // After this migration, htlc_status is required for all Lightning payments.
+            // Also reset the bitcoin sync offset to trigger a full resync, which will
+            // correct the backfilled expiry_time values.
+            "UPDATE payment_details_lightning
+             SET htlc_status = CASE
+                     WHEN (SELECT status FROM payments WHERE id = payment_id) = 'completed' THEN 'PreimageShared'
+                     WHEN (SELECT status FROM payments WHERE id = payment_id) = 'pending' THEN 'WaitingForPreimage'
+                     ELSE 'Returned'
+                 END;
+             UPDATE settings
+             SET value = json_set(value, '$.offset', 0)
+             WHERE key = 'sync_offset' AND json_valid(value);",
         ]
     }
 }
@@ -395,39 +410,49 @@ impl Storage for SqliteStorage {
             let mut all_payment_details_clauses = Vec::new();
             for payment_details_filter in payment_details_filter {
                 let mut payment_details_clauses = Vec::new();
-                // Filter by Spark HTLC status
-                if let PaymentDetailsFilter::Spark {
-                    htlc_status: Some(htlc_statuses),
-                    ..
-                } = payment_details_filter
-                    && !htlc_statuses.is_empty()
-                {
+                // Filter by HTLC status (Spark or Lightning)
+                let htlc_filter = match payment_details_filter {
+                    PaymentDetailsFilter::Spark {
+                        htlc_status: Some(s),
+                        ..
+                    } if !s.is_empty() => Some(("s", s)),
+                    PaymentDetailsFilter::Lightning {
+                        htlc_status: Some(s),
+                    } if !s.is_empty() => Some(("l", s)),
+                    _ => None,
+                };
+                if let Some((alias, htlc_statuses)) = htlc_filter {
                     let placeholders = htlc_statuses
                         .iter()
                         .map(|_| "?")
                         .collect::<Vec<_>>()
                         .join(", ");
-                    payment_details_clauses.push(format!(
-                        "json_extract(s.htlc_details, '$.status') IN ({placeholders})"
-                    ));
+                    if alias == "l" {
+                        // Lightning: htlc_status is a direct column
+                        payment_details_clauses.push(format!("l.htlc_status IN ({placeholders})"));
+                    } else {
+                        // Spark: htlc_details is still JSON
+                        payment_details_clauses.push(format!(
+                            "json_extract(s.htlc_details, '$.status') IN ({placeholders})"
+                        ));
+                    }
                     for htlc_status in htlc_statuses {
                         params.push(Box::new(htlc_status.to_string()));
                     }
                 }
                 // Filter by conversion info presence
-                if let PaymentDetailsFilter::Spark {
-                    conversion_refund_needed: Some(conversion_refund_needed),
-                    ..
-                }
-                | PaymentDetailsFilter::Token {
-                    conversion_refund_needed: Some(conversion_refund_needed),
-                    ..
-                } = payment_details_filter
-                {
-                    let type_check = match payment_details_filter {
-                        PaymentDetailsFilter::Spark { .. } => "p.spark = 1",
-                        PaymentDetailsFilter::Token { .. } => "p.spark IS NULL",
-                    };
+                let conversion_filter = match payment_details_filter {
+                    PaymentDetailsFilter::Spark {
+                        conversion_refund_needed: Some(v),
+                        ..
+                    } => Some((v, "p.spark = 1")),
+                    PaymentDetailsFilter::Token {
+                        conversion_refund_needed: Some(v),
+                        ..
+                    } => Some((v, "p.spark IS NULL")),
+                    _ => None,
+                };
+                if let Some((conversion_refund_needed, type_check)) = conversion_filter {
                     let refund_needed = if *conversion_refund_needed {
                         "= 'RefundNeeded'"
                     } else {
@@ -590,28 +615,31 @@ impl Storage for SqliteStorage {
             }
             Some(PaymentDetails::Lightning {
                 invoice,
-                payment_hash,
                 destination_pubkey,
                 description,
-                preimage,
+                htlc_details,
                 ..
             }) => {
                 tx.execute(
-                    "INSERT INTO payment_details_lightning (payment_id, invoice, payment_hash, destination_pubkey, description, preimage) 
-                     VALUES (?, ?, ?, ?, ?, ?)
+                    "INSERT INTO payment_details_lightning (payment_id, invoice, payment_hash, destination_pubkey, description, preimage, htlc_status, htlc_expiry_time)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                      ON CONFLICT(payment_id) DO UPDATE SET
                         invoice=excluded.invoice,
                         payment_hash=excluded.payment_hash,
                         destination_pubkey=excluded.destination_pubkey,
                         description=excluded.description,
-                        preimage=COALESCE(excluded.preimage, payment_details_lightning.preimage)",
+                        preimage=COALESCE(excluded.preimage, payment_details_lightning.preimage),
+                        htlc_status=COALESCE(excluded.htlc_status, payment_details_lightning.htlc_status),
+                        htlc_expiry_time=COALESCE(excluded.htlc_expiry_time, payment_details_lightning.htlc_expiry_time)",
                     params![
                         payment.id,
                         invoice,
-                        payment_hash,
+                        htlc_details.payment_hash,
                         destination_pubkey,
                         description,
-                        preimage,
+                        htlc_details.preimage,
+                        htlc_details.status.to_string(),
+                        htlc_details.expiry_time,
                     ],
                 )?;
             }
@@ -745,7 +773,7 @@ impl Storage for SqliteStorage {
             .collect();
         let rows = stmt.query_map(params.as_slice(), |row| {
             let payment = map_payment(row)?;
-            let parent_payment_id: String = row.get(27)?;
+            let parent_payment_id: String = row.get(29)?;
             Ok((parent_payment_id, payment))
         })?;
 
@@ -1211,7 +1239,7 @@ impl Storage for SqliteStorage {
 }
 
 /// Base query for payment lookups.
-/// Column indices 0-26 are used by `map_payment`, index 27 (`parent_payment_id`) is only used by `get_payments_by_parent_ids`.
+/// Column indices 0-27 are used by `map_payment`, index 28 (`parent_payment_id`) is only used by `get_payments_by_parent_ids`.
 const SELECT_PAYMENT_SQL: &str = "
     SELECT p.id,
            p.payment_type,
@@ -1228,6 +1256,8 @@ const SELECT_PAYMENT_SQL: &str = "
            l.destination_pubkey AS lightning_destination_pubkey,
            COALESCE(l.description, pm.lnurl_description) AS lightning_description,
            l.preimage AS lightning_preimage,
+           l.htlc_status AS lightning_htlc_status,
+           l.htlc_expiry_time AS lightning_htlc_expiry_time,
            pm.lnurl_pay_info,
            pm.lnurl_withdraw_info,
            pm.conversion_info,
@@ -1254,7 +1284,7 @@ fn map_payment(row: &Row<'_>) -> Result<Payment, rusqlite::Error> {
     let deposit_tx_id: Option<String> = row.get(8)?;
     let spark: Option<i32> = row.get(9)?;
     let lightning_invoice: Option<String> = row.get(10)?;
-    let token_metadata: Option<String> = row.get(18)?;
+    let token_metadata: Option<String> = row.get(20)?;
     let details = match (
         lightning_invoice,
         withdraw_tx_id,
@@ -1267,11 +1297,26 @@ fn map_payment(row: &Row<'_>) -> Result<Payment, rusqlite::Error> {
             let destination_pubkey: String = row.get(12)?;
             let description: Option<String> = row.get(13)?;
             let preimage: Option<String> = row.get(14)?;
-            let lnurl_pay_info: Option<LnurlPayInfo> = row.get(15)?;
-            let lnurl_withdraw_info: Option<LnurlWithdrawInfo> = row.get(16)?;
-            let lnurl_nostr_zap_request: Option<String> = row.get(24)?;
-            let lnurl_nostr_zap_receipt: Option<String> = row.get(25)?;
-            let lnurl_sender_comment: Option<String> = row.get(26)?;
+            let htlc_status: SparkHtlcStatus =
+                row.get::<_, Option<SparkHtlcStatus>>(15)?.ok_or_else(|| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        15,
+                        rusqlite::types::Type::Null,
+                        "htlc_status is required for Lightning payments".into(),
+                    )
+                })?;
+            let htlc_expiry_time: u64 = row.get(16)?;
+            let htlc_details = SparkHtlcDetails {
+                payment_hash,
+                preimage,
+                expiry_time: htlc_expiry_time,
+                status: htlc_status,
+            };
+            let lnurl_pay_info: Option<LnurlPayInfo> = row.get(17)?;
+            let lnurl_withdraw_info: Option<LnurlWithdrawInfo> = row.get(18)?;
+            let lnurl_nostr_zap_request: Option<String> = row.get(26)?;
+            let lnurl_nostr_zap_receipt: Option<String> = row.get(27)?;
+            let lnurl_sender_comment: Option<String> = row.get(28)?;
             let lnurl_receive_metadata =
                 if lnurl_nostr_zap_request.is_some() || lnurl_sender_comment.is_some() {
                     Some(LnurlReceiveMetadata {
@@ -1284,10 +1329,9 @@ fn map_payment(row: &Row<'_>) -> Result<Payment, rusqlite::Error> {
                 };
             Some(PaymentDetails::Lightning {
                 invoice,
-                payment_hash,
                 destination_pubkey,
                 description,
-                preimage,
+                htlc_details,
                 lnurl_pay_info,
                 lnurl_withdraw_info,
                 lnurl_receive_metadata,
@@ -1296,17 +1340,17 @@ fn map_payment(row: &Row<'_>) -> Result<Payment, rusqlite::Error> {
         (_, Some(tx_id), _, _, _) => Some(PaymentDetails::Withdraw { tx_id }),
         (_, _, Some(tx_id), _, _) => Some(PaymentDetails::Deposit { tx_id }),
         (_, _, _, Some(_), _) => {
-            let invoice_details_str: Option<String> = row.get(22)?;
+            let invoice_details_str: Option<String> = row.get(24)?;
             let invoice_details = invoice_details_str
-                .map(|s| serde_json_from_str(&s, 22))
+                .map(|s| serde_json_from_str(&s, 24))
                 .transpose()?;
-            let htlc_details_str: Option<String> = row.get(23)?;
+            let htlc_details_str: Option<String> = row.get(25)?;
             let htlc_details = htlc_details_str
-                .map(|s| serde_json_from_str(&s, 23))
+                .map(|s| serde_json_from_str(&s, 25))
                 .transpose()?;
-            let conversion_info_str: Option<String> = row.get(17)?;
+            let conversion_info_str: Option<String> = row.get(19)?;
             let conversion_info: Option<ConversionInfo> = conversion_info_str
-                .map(|s: String| serde_json_from_str(&s, 17))
+                .map(|s: String| serde_json_from_str(&s, 19))
                 .transpose()?;
             Some(PaymentDetails::Spark {
                 invoice_details,
@@ -1315,18 +1359,18 @@ fn map_payment(row: &Row<'_>) -> Result<Payment, rusqlite::Error> {
             })
         }
         (_, _, _, _, Some(metadata)) => {
-            let tx_type: TokenTransactionType = row.get(20)?;
-            let invoice_details_str: Option<String> = row.get(21)?;
+            let tx_type: TokenTransactionType = row.get(22)?;
+            let invoice_details_str: Option<String> = row.get(23)?;
             let invoice_details = invoice_details_str
-                .map(|s| serde_json_from_str(&s, 21))
+                .map(|s| serde_json_from_str(&s, 23))
                 .transpose()?;
-            let conversion_info_str: Option<String> = row.get(17)?;
+            let conversion_info_str: Option<String> = row.get(19)?;
             let conversion_info: Option<ConversionInfo> = conversion_info_str
-                .map(|s: String| serde_json_from_str(&s, 17))
+                .map(|s: String| serde_json_from_str(&s, 19))
                 .transpose()?;
             Some(PaymentDetails::Token {
-                metadata: serde_json_from_str(&metadata, 18)?,
-                tx_hash: row.get(19)?,
+                metadata: serde_json_from_str(&metadata, 20)?,
+                tx_hash: row.get(21)?,
                 tx_type,
                 invoice_details,
                 conversion_info,
@@ -1401,6 +1445,26 @@ impl FromSql for TokenTransactionType {
                 let tx_type: TokenTransactionType =
                     s.parse().map_err(|_: String| FromSqlError::InvalidType)?;
                 Ok(tx_type)
+            }
+            _ => Err(FromSqlError::InvalidType),
+        }
+    }
+}
+
+impl ToSql for SparkHtlcStatus {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(rusqlite::types::ToSqlOutput::from(self.to_string()))
+    }
+}
+
+impl FromSql for SparkHtlcStatus {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        match value {
+            ValueRef::Text(i) => {
+                let s = std::str::from_utf8(i).map_err(|e| FromSqlError::Other(Box::new(e)))?;
+                let status: SparkHtlcStatus =
+                    s.parse().map_err(|_: String| FromSqlError::InvalidType)?;
+                Ok(status)
             }
             _ => Err(FromSqlError::InvalidType),
         }
@@ -1575,6 +1639,15 @@ mod tests {
         let storage = SqliteStorage::new(&temp_dir).unwrap();
 
         crate::persist::tests::test_spark_htlc_status_filtering(Box::new(storage)).await;
+    }
+
+    #[tokio::test]
+    async fn test_lightning_htlc_details_and_status_filtering() {
+        let temp_dir = create_temp_dir("sqlite_storage_htlc_details");
+        let storage = SqliteStorage::new(&temp_dir).unwrap();
+
+        crate::persist::tests::test_lightning_htlc_details_and_status_filtering(Box::new(storage))
+            .await;
     }
 
     #[tokio::test]
@@ -1841,5 +1914,208 @@ mod tests {
             "Should find only the Transfer payment"
         );
         assert_eq!(transfer_payments[0].id, "token-migration-test");
+    }
+
+    #[tokio::test]
+    #[allow(clippy::too_many_lines)]
+    async fn test_migration_htlc_details() {
+        use crate::{
+            ListPaymentsRequest, PaymentDetails, PaymentDetailsFilter, SparkHtlcStatus, Storage,
+        };
+        use rusqlite::{Connection, params};
+        use rusqlite_migration::{M, Migrations};
+
+        let temp_dir = create_temp_dir("sqlite_migration_htlc_details");
+        let db_path = temp_dir.join(super::DEFAULT_DB_FILENAME);
+
+        // Step 1: Create database at version 23 (before the htlc_status backfill migration)
+        // This includes the ALTER TABLE that adds htlc_status and htlc_expiry_time columns (migration 22)
+        // but not the backfill UPDATE (migration 23).
+        {
+            let mut conn = Connection::open(&db_path).unwrap();
+            let migrations_before_backfill: Vec<_> = SqliteStorage::current_migrations()
+                .iter()
+                .take(23) // Migrations 0-22
+                .map(|s| M::up(s))
+                .collect();
+            let migrations = Migrations::new(migrations_before_backfill);
+            migrations.to_latest(&mut conn).unwrap();
+        }
+
+        // Step 2: Insert Lightning payments with different statuses to test all branches
+        {
+            let conn = Connection::open(&db_path).unwrap();
+
+            // Insert a Completed Lightning payment
+            conn.execute(
+                "INSERT INTO payments (id, payment_type, status, amount, fees, timestamp, method)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)",
+                params![
+                    "ln-completed",
+                    "send",
+                    "completed",
+                    "1000",
+                    "10",
+                    1_700_000_001_i64,
+                    "\"lightning\""
+                ],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO payment_details_lightning (payment_id, invoice, payment_hash, destination_pubkey, preimage)
+                 VALUES (?, ?, ?, ?, ?)",
+                params![
+                    "ln-completed",
+                    "lnbc_completed",
+                    "hash_completed_0123456789abcdef0123456789abcdef0123456789abcdef01234567",
+                    "03pubkey1",
+                    "preimage_completed"
+                ],
+            )
+            .unwrap();
+
+            // Insert a Pending Lightning payment
+            conn.execute(
+                "INSERT INTO payments (id, payment_type, status, amount, fees, timestamp, method)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)",
+                params![
+                    "ln-pending",
+                    "receive",
+                    "pending",
+                    "2000",
+                    "0",
+                    1_700_000_002_i64,
+                    "\"lightning\""
+                ],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO payment_details_lightning (payment_id, invoice, payment_hash, destination_pubkey)
+                 VALUES (?, ?, ?, ?)",
+                params![
+                    "ln-pending",
+                    "lnbc_pending",
+                    "hash_pending_0123456789abcdef0123456789abcdef0123456789abcdef012345678",
+                    "03pubkey2"
+                ],
+            )
+            .unwrap();
+
+            // Insert a Failed Lightning payment
+            conn.execute(
+                "INSERT INTO payments (id, payment_type, status, amount, fees, timestamp, method)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)",
+                params![
+                    "ln-failed",
+                    "send",
+                    "failed",
+                    "3000",
+                    "5",
+                    1_700_000_003_i64,
+                    "\"lightning\""
+                ],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO payment_details_lightning (payment_id, invoice, payment_hash, destination_pubkey)
+                 VALUES (?, ?, ?, ?)",
+                params![
+                    "ln-failed",
+                    "lnbc_failed",
+                    "hash_failed_0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+                    "03pubkey3"
+                ],
+            )
+            .unwrap();
+        }
+
+        // Step 3: Open with SqliteStorage (triggers migration 23 - the backfill)
+        let storage = SqliteStorage::new(&temp_dir).unwrap();
+
+        // Step 4: Verify Completed → PreimageShared
+        let completed = storage
+            .get_payment_by_id("ln-completed".to_string())
+            .await
+            .unwrap();
+        match &completed.details {
+            Some(PaymentDetails::Lightning { htlc_details, .. }) => {
+                assert_eq!(htlc_details.status, SparkHtlcStatus::PreimageShared);
+                assert_eq!(htlc_details.expiry_time, 0);
+                assert_eq!(
+                    htlc_details.payment_hash,
+                    "hash_completed_0123456789abcdef0123456789abcdef0123456789abcdef01234567"
+                );
+                assert_eq!(htlc_details.preimage.as_deref(), Some("preimage_completed"));
+            }
+            _ => panic!("Expected Lightning payment details for ln-completed"),
+        }
+
+        // Step 5: Verify Pending → WaitingForPreimage
+        let pending = storage
+            .get_payment_by_id("ln-pending".to_string())
+            .await
+            .unwrap();
+        match &pending.details {
+            Some(PaymentDetails::Lightning { htlc_details, .. }) => {
+                assert_eq!(htlc_details.status, SparkHtlcStatus::WaitingForPreimage);
+                assert_eq!(htlc_details.expiry_time, 0);
+                assert_eq!(
+                    htlc_details.payment_hash,
+                    "hash_pending_0123456789abcdef0123456789abcdef0123456789abcdef012345678"
+                );
+                assert!(htlc_details.preimage.is_none());
+            }
+            _ => panic!("Expected Lightning payment details for ln-pending"),
+        }
+
+        // Step 6: Verify Failed → Returned
+        let failed = storage
+            .get_payment_by_id("ln-failed".to_string())
+            .await
+            .unwrap();
+        match &failed.details {
+            Some(PaymentDetails::Lightning { htlc_details, .. }) => {
+                assert_eq!(htlc_details.status, SparkHtlcStatus::Returned);
+                assert_eq!(htlc_details.expiry_time, 0);
+            }
+            _ => panic!("Expected Lightning payment details for ln-failed"),
+        }
+
+        // Step 7: Verify filtering by htlc_status works on migrated data
+        let waiting_payments = storage
+            .list_payments(ListPaymentsRequest {
+                payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
+                    htlc_status: Some(vec![SparkHtlcStatus::WaitingForPreimage]),
+                }]),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(waiting_payments.len(), 1);
+        assert_eq!(waiting_payments[0].id, "ln-pending");
+
+        let preimage_shared = storage
+            .list_payments(ListPaymentsRequest {
+                payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
+                    htlc_status: Some(vec![SparkHtlcStatus::PreimageShared]),
+                }]),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(preimage_shared.len(), 1);
+        assert_eq!(preimage_shared[0].id, "ln-completed");
+
+        let returned = storage
+            .list_payments(ListPaymentsRequest {
+                payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
+                    htlc_status: Some(vec![SparkHtlcStatus::Returned]),
+                }]),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(returned.len(), 1);
+        assert_eq!(returned[0].id, "ln-failed");
     }
 }

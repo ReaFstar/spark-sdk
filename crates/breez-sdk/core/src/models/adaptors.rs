@@ -6,7 +6,9 @@ use spark_wallet::{
     Network as SparkNetwork, PreimageRequest, PreimageRequestStatus, SspUserRequest,
     TokenTransactionStatus, TransferDirection, TransferStatus, TransferType, WalletTransfer,
 };
-use tracing::debug;
+use std::time::Duration;
+
+use tracing::{debug, warn};
 use web_time::UNIX_EPOCH;
 
 use crate::{
@@ -15,6 +17,60 @@ use crate::{
     SendOnchainSpeedFeeQuote, SparkHtlcDetails, SparkHtlcStatus, SparkInvoicePaymentDetails,
     TokenBalance, TokenMetadata,
 };
+
+/// Feb 1, 2026 00:00:00 UTC — transfers before this may lack HTLC data on the operator.
+const HTLC_DATA_REQUIRED_SINCE: Duration = Duration::from_secs(1_769_904_000);
+
+/// Derive HTLC details from SSP request fields when the operator lacks the
+/// `PreimageRequest`. Only allowed for old transfers (before [`HTLC_DATA_REQUIRED_SINCE`]);
+/// new transfers without HTLC data are considered an error.
+fn derive_htlc_details_from_ssp(
+    transfer: &WalletTransfer,
+    payment_hash: &str,
+    preimage: Option<&str>,
+) -> Result<SparkHtlcDetails, SdkError> {
+    let cutoff = UNIX_EPOCH
+        .checked_add(HTLC_DATA_REQUIRED_SINCE)
+        .ok_or_else(|| SdkError::Generic("HTLC cutoff time overflow".to_string()))?;
+    let is_old = transfer.created_at.is_none_or(|t| t < cutoff);
+    if !is_old {
+        return Err(SdkError::Generic(format!(
+            "Missing HTLC details for Lightning payment transfer {}",
+            transfer.id
+        )));
+    }
+
+    warn!(
+        "Missing HTLC preimage request for Lightning transfer {}, deriving from SSP data",
+        transfer.id
+    );
+
+    let status = match transfer.status {
+        TransferStatus::Completed => SparkHtlcStatus::PreimageShared,
+        TransferStatus::Expired | TransferStatus::Returned => SparkHtlcStatus::Returned,
+        _ => SparkHtlcStatus::WaitingForPreimage,
+    };
+    Ok(SparkHtlcDetails {
+        payment_hash: payment_hash.to_string(),
+        preimage: preimage.map(ToString::to_string),
+        expiry_time: transfer
+            .expiry_time
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_secs()),
+        status,
+    })
+}
+
+/// If the HTLC details are missing a preimage, fill it in from the given fallback and update
+/// the status to [`SparkHtlcStatus::PreimageShared`] accordingly.
+fn reconcile_htlc_preimage(details: &mut SparkHtlcDetails, preimage: Option<&str>) {
+    if details.preimage.is_none() {
+        details.preimage = preimage.map(ToString::to_string);
+    }
+    if details.preimage.is_some() {
+        details.status = SparkHtlcStatus::PreimageShared;
+    }
+}
 
 impl PaymentMethod {
     fn from_transfer(transfer: &WalletTransfer) -> Self {
@@ -35,6 +91,7 @@ impl PaymentMethod {
 }
 
 impl PaymentDetails {
+    #[allow(clippy::too_many_lines)]
     fn from_transfer(transfer: &WalletTransfer) -> Result<Option<Self>, SdkError> {
         if !transfer.is_ssp_transfer {
             // Check for Spark invoice payments
@@ -78,12 +135,25 @@ impl PaymentDetails {
                     .ok_or(SdkError::Generic(
                         "Invalid invoice in SspUserRequest::LightningReceiveRequest".to_string(),
                     ))?;
+                let htlc_details = if let Some(req) = &transfer.htlc_preimage_request {
+                    let mut details: SparkHtlcDetails = req.clone().try_into()?;
+                    reconcile_htlc_preimage(
+                        &mut details,
+                        request.lightning_receive_payment_preimage.as_deref(),
+                    );
+                    details
+                } else {
+                    derive_htlc_details_from_ssp(
+                        transfer,
+                        &request.invoice.payment_hash,
+                        request.lightning_receive_payment_preimage.as_deref(),
+                    )?
+                };
                 PaymentDetails::Lightning {
                     description: invoice_details.description,
-                    preimage: request.lightning_receive_payment_preimage.clone(),
                     invoice: request.invoice.encoded_invoice.clone(),
-                    payment_hash: request.invoice.payment_hash.clone(),
                     destination_pubkey: invoice_details.payee_pubkey,
+                    htlc_details,
                     lnurl_pay_info: None,
                     lnurl_withdraw_info: None,
                     lnurl_receive_metadata: None,
@@ -94,12 +164,25 @@ impl PaymentDetails {
                     input::parse_invoice(&request.encoded_invoice).ok_or(SdkError::Generic(
                         "Invalid invoice in SspUserRequest::LightningSendRequest".to_string(),
                     ))?;
+                let htlc_details = if let Some(req) = &transfer.htlc_preimage_request {
+                    let mut details: SparkHtlcDetails = req.clone().try_into()?;
+                    reconcile_htlc_preimage(
+                        &mut details,
+                        request.lightning_send_payment_preimage.as_deref(),
+                    );
+                    details
+                } else {
+                    derive_htlc_details_from_ssp(
+                        transfer,
+                        &invoice_details.payment_hash,
+                        request.lightning_send_payment_preimage.as_deref(),
+                    )?
+                };
                 PaymentDetails::Lightning {
                     description: invoice_details.description,
-                    preimage: request.lightning_send_payment_preimage.clone(),
                     invoice: request.encoded_invoice.clone(),
-                    payment_hash: invoice_details.payment_hash,
                     destination_pubkey: invoice_details.payee_pubkey,
+                    htlc_details,
                     lnurl_pay_info: None,
                     lnurl_withdraw_info: None,
                     lnurl_receive_metadata: None,
@@ -228,10 +311,18 @@ impl TryFrom<WalletTransfer> for Payment {
 }
 
 impl Payment {
+    /// Creates a [`Payment`] from a [`LightningSendPayment`] and its associated HTLC details.
+    ///
+    /// The `htlc_details` may be stale (e.g. captured at payment creation time), so this
+    /// method reconciles them with the current state of the `payment`:
+    /// - The preimage is taken from `htlc_details` if present, otherwise from the payment.
+    /// - If a preimage is available from either source, the HTLC status is set to
+    ///   [`SparkHtlcStatus::PreimageShared`].
     pub fn from_lightning(
         payment: LightningSendPayment,
         amount_sat: u128,
         transfer_id: String,
+        mut htlc_details: SparkHtlcDetails,
     ) -> Result<Self, SdkError> {
         let mut status = match payment.status {
             LightningSendStatus::LightningPaymentSucceeded => PaymentStatus::Completed,
@@ -246,15 +337,16 @@ impl Payment {
             status = PaymentStatus::Completed;
         }
 
+        reconcile_htlc_preimage(&mut htlc_details, payment.payment_preimage.as_deref());
+
         let invoice_details = input::parse_invoice(&payment.encoded_invoice).ok_or(
             SdkError::Generic("Invalid invoice in LightnintSendPayment".to_string()),
         )?;
         let details = PaymentDetails::Lightning {
             description: invoice_details.description,
-            preimage: payment.payment_preimage,
             invoice: payment.encoded_invoice,
-            payment_hash: invoice_details.payment_hash,
             destination_pubkey: invoice_details.payee_pubkey,
+            htlc_details,
             lnurl_pay_info: None,
             lnurl_withdraw_info: None,
             lnurl_receive_metadata: None,

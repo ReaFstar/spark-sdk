@@ -137,6 +137,7 @@ pub enum CurrencyUnit {
     Rwf,
     Zmw,
     Aed,
+    Gtq,
     Usdt,
     Usdc,
     #[serde(other, skip_serializing)]
@@ -194,7 +195,9 @@ pub enum LightningReceiveRequestStatus {
     HtlcReceived,
     TransferCreated,
     TransferCreationFailed,
+    PaymentPreimagePending,
     PaymentPreimageRecovered,
+    PaymentPreimageQueryingFailed,
     PaymentPreimageRecoveringFailed,
     TransferCanceled,
     HtlcFailed,
@@ -421,6 +424,7 @@ pub enum ClaimStaticDepositStatus {
     UtxoSwappingFailed,
     SpendTxCreated,
     SpendTxBroadcast,
+    SpendTxConfirmed,
     #[serde(other, skip_serializing)]
     Unknown,
 }
@@ -446,6 +450,9 @@ impl From<TransfersClaimStaticDepositStatus> for ClaimStaticDepositStatus {
             }
             TransfersClaimStaticDepositStatus::SPEND_TX_BROADCAST => {
                 ClaimStaticDepositStatus::SpendTxBroadcast
+            }
+            TransfersClaimStaticDepositStatus::SPEND_TX_CONFIRMED => {
+                ClaimStaticDepositStatus::SpendTxConfirmed
             }
             TransfersClaimStaticDepositStatus::Other(_) => ClaimStaticDepositStatus::Unknown,
         }

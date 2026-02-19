@@ -478,10 +478,9 @@ pub enum PaymentDetails {
     },
     Lightning {
         description: Option<String>,
-        preimage: Option<String>,
         invoice: String,
-        payment_hash: String,
         destination_pubkey: String,
+        htlc_details: SparkHtlcDetails,
         lnurl_pay_info: Option<LnurlPayInfo>,
         lnurl_withdraw_info: Option<LnurlWithdrawInfo>,
         lnurl_receive_metadata: Option<LnurlReceiveMetadata>,
@@ -721,6 +720,7 @@ pub enum ReceivePaymentMethod {
         description: String,
         amount_sats: Option<u64>,
         expiry_secs: Option<u32>,
+        payment_hash: Option<String>,
     },
 }
 
@@ -901,6 +901,9 @@ pub enum PaymentDetailsFilter {
         conversion_refund_needed: Option<bool>,
         tx_hash: Option<String>,
         tx_type: Option<TokenTransactionType>,
+    },
+    Lightning {
+        htlc_status: Option<Vec<SparkHtlcStatus>>,
     },
 }
 

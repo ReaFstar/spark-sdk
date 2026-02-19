@@ -10,6 +10,15 @@ use crate::{
     sync_storage::{Record, RecordId, UnversionedRecordChange},
 };
 
+fn test_lightning_htlc(payment_hash: &str) -> SparkHtlcDetails {
+    SparkHtlcDetails {
+        payment_hash: payment_hash.to_string(),
+        preimage: None,
+        expiry_time: 0,
+        status: SparkHtlcStatus::PreimageShared,
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 pub async fn test_sync_storage(storage: Box<dyn Storage>) {
     use std::collections::HashMap;
@@ -466,10 +475,9 @@ pub async fn test_storage(storage: Box<dyn Storage>) {
         method: PaymentMethod::Lightning,
         details: Some(PaymentDetails::Lightning {
             description: Some("Test lightning payment".to_string()),
-            preimage: Some("abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab".to_string()),
             invoice: "lnbc250n1pjqxyz9pp5abc123def456ghi789jkl012mno345pqr678stu901vwx234yz567890abcdefghijklmnopqrstuvwxyz".to_string(),
-            payment_hash: "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321".to_string(),
             destination_pubkey: "03123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01".to_string(),
+            htlc_details: test_lightning_htlc("fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321"),
             lnurl_pay_info: pay_metadata.lnurl_pay_info.clone(),
             lnurl_withdraw_info: pay_metadata.lnurl_withdraw_info.clone(),
             lnurl_receive_metadata: None,
@@ -494,10 +502,9 @@ pub async fn test_storage(storage: Box<dyn Storage>) {
         method: PaymentMethod::Lightning,
         details: Some(PaymentDetails::Lightning {
             description: Some("Test lightning payment".to_string()),
-            preimage: Some("abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab".to_string()),
             invoice: "lnbc250n1pjqxyz9pp5abc123def456ghi789jkl012mno345pqr678stu901vwx234yz567890abcdefghijklmnopqrstuvwxyz".to_string(),
-            payment_hash: "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321".to_string(),
             destination_pubkey: "03123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01".to_string(),
+            htlc_details: test_lightning_htlc("fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321"),
             lnurl_pay_info: withdraw_metadata.lnurl_pay_info.clone(),
             lnurl_withdraw_info: withdraw_metadata.lnurl_withdraw_info.clone(),
             lnurl_receive_metadata: None,
@@ -505,7 +512,35 @@ pub async fn test_storage(storage: Box<dyn Storage>) {
         conversion_details: None,
     };
 
-    // Test 8: Lightning payment with minimal details
+    // Test 8: Lightning HODL payment with HTLC details
+    let lightning_hodl_payment = Payment {
+        id: "lightning_hodl_pmt456".to_string(),
+        payment_type: PaymentType::Receive,
+        status: PaymentStatus::Pending,
+        amount: 50_000,
+        fees: 500,
+        timestamp: Utc::now().timestamp().try_into().unwrap(),
+        method: PaymentMethod::Lightning,
+        details: Some(PaymentDetails::Lightning {
+            description: Some("HODL invoice payment".to_string()),
+            invoice: "lnbc500n1hodl_invoice_abc123".to_string(),
+            destination_pubkey:
+                "03hodlpubkey123456789abcdef0123456789abcdef0123456789abcdef01234567".to_string(),
+            htlc_details: SparkHtlcDetails {
+                payment_hash: "hodlhash1234567890abcdef1234567890abcdef1234567890abcdef12345678"
+                    .to_string(),
+                preimage: None,
+                expiry_time: 30_000,
+                status: SparkHtlcStatus::WaitingForPreimage,
+            },
+            lnurl_pay_info: None,
+            lnurl_withdraw_info: None,
+            lnurl_receive_metadata: None,
+        }),
+        conversion_details: None,
+    };
+
+    // Test 9: Lightning payment with minimal details
     let lightning_minimal_payment = Payment {
         id: "lightning_minimal_pmt012".to_string(),
         payment_type: PaymentType::Receive,
@@ -516,10 +551,9 @@ pub async fn test_storage(storage: Box<dyn Storage>) {
         method: PaymentMethod::Lightning,
         details: Some(PaymentDetails::Lightning {
             description: None,
-            preimage: None,
             invoice: "lnbc100n1pjqxyz9pp5def456ghi789jkl012mno345pqr678stu901vwx234yz567890abcdefghijklmnopqrstuvwxyz".to_string(),
-            payment_hash: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890".to_string(),
             destination_pubkey: "02987654321fedcba0987654321fedcba0987654321fedcba0987654321fedcba09".to_string(),
+            htlc_details: test_lightning_htlc("abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"),
             lnurl_pay_info: None,
             lnurl_withdraw_info: None,
             lnurl_receive_metadata: None,
@@ -545,10 +579,9 @@ pub async fn test_storage(storage: Box<dyn Storage>) {
         method: PaymentMethod::Lightning,
         details: Some(PaymentDetails::Lightning {
             description: Some("LNURL receive test".to_string()),
-            preimage: Some("receivepreimage1234567890abcdef1234567890abcdef1234567890abcdef12".to_string()),
             invoice: "lnbc1000n1pjqxyz9pp5receive123def456ghi789jkl012mno345pqr678stu901vwx234yz567890abcdefghijklmnopqrstuvwxyz".to_string(),
-            payment_hash: lnurl_receive_payment_hash.clone(),
             destination_pubkey: "03receivepubkey123456789abcdef0123456789abcdef0123456789abcdef01234".to_string(),
+            htlc_details: test_lightning_htlc(&lnurl_receive_payment_hash),
             lnurl_pay_info: None,
             lnurl_withdraw_info: None,
             lnurl_receive_metadata: Some(lnurl_receive_metadata.clone()),
@@ -733,6 +766,7 @@ pub async fn test_storage(storage: Box<dyn Storage>) {
         token_burn_payment.clone(),
         lightning_lnurl_pay_payment.clone(),
         lightning_lnurl_withdraw_payment.clone(),
+        lightning_hodl_payment.clone(),
         lightning_minimal_payment.clone(),
         lightning_lnurl_receive_payment.clone(),
         withdraw_payment.clone(),
@@ -811,9 +845,9 @@ pub async fn test_storage(storage: Box<dyn Storage>) {
         })
         .await
         .unwrap();
-    // 17 total payments minus 2 child payments
+    // 18 total payments minus 2 child payments
     // (successful_sent_conversion_payment and successful_received_conversion_payment has parent_payment_id)
-    assert_eq!(payments.len(), 15);
+    assert_eq!(payments.len(), 16);
 
     // Test each payment type individually
     for (i, expected_payment) in test_payments.iter().enumerate() {
@@ -908,30 +942,27 @@ pub async fn test_storage(storage: Box<dyn Storage>) {
             (
                 Some(PaymentDetails::Lightning {
                     description: r_description,
-                    preimage: r_preimage,
                     invoice: r_invoice,
-                    payment_hash: r_hash,
                     destination_pubkey: r_dest_pubkey,
+                    htlc_details: r_htlc,
                     lnurl_pay_info: r_pay_lnurl,
                     lnurl_withdraw_info: r_withdraw_lnurl,
                     lnurl_receive_metadata: r_receive_metadata,
                 }),
                 Some(PaymentDetails::Lightning {
                     description: e_description,
-                    preimage: e_preimage,
                     invoice: e_invoice,
-                    payment_hash: e_hash,
                     destination_pubkey: e_dest_pubkey,
+                    htlc_details: e_htlc,
                     lnurl_pay_info: e_pay_lnurl,
                     lnurl_withdraw_info: e_withdraw_lnurl,
                     lnurl_receive_metadata: e_receive_metadata,
                 }),
             ) => {
                 assert_eq!(r_description, e_description);
-                assert_eq!(r_preimage, e_preimage);
                 assert_eq!(r_invoice, e_invoice);
-                assert_eq!(r_hash, e_hash);
                 assert_eq!(r_dest_pubkey, e_dest_pubkey);
+                assert_eq!(r_htlc, e_htlc);
 
                 // Test LNURL pay info if present
                 match (r_pay_lnurl, e_pay_lnurl) {
@@ -1000,9 +1031,9 @@ pub async fn test_storage(storage: Box<dyn Storage>) {
         .filter(|p| p.payment_type == PaymentType::Receive)
         .count();
     // Send: 9 - 1 child (successful_sent_conversion_payment) = 8
-    // Receive: 8 - 1 child (successful_received_conversion_payment) = 7
+    // Receive: 9 - 1 child (successful_received_conversion_payment) = 8
     assert_eq!(send_payments, 8); // spark, token_burn, lightning_lnurl_pay, withdraw, no_details, after_conversion, failed_with_refund, failed_no_refund
-    assert_eq!(receive_payments, 7); // spark_htlc, token_transfer, token_mint, lightning_lnurl_withdraw, lightning_minimal, lightning_lnurl_receive, deposit
+    assert_eq!(receive_payments, 8); // spark_htlc, token_transfer, token_mint, lightning_lnurl_withdraw, lightning_hodl, lightning_minimal, lightning_lnurl_receive, deposit
 
     // Test filtering by status
     let completed_payments = payments
@@ -1020,7 +1051,7 @@ pub async fn test_storage(storage: Box<dyn Storage>) {
     // 14 completed payments minus 2 child payments = 12
     // (successful_sent_conversion_payment and successful_received_conversion_payment both have parent_payment_id)
     assert_eq!(completed_payments, 12); // spark, spark_htlc, token_mint, token_burn, lightning_lnurl_pay, lightning_lnurl_withdraw, lightning_lnurl_receive, withdraw, deposit, after_conversion, failed_with_refund, failed_no_refund
-    assert_eq!(pending_payments, 2); // token, no_details
+    assert_eq!(pending_payments, 3); // token, lightning_hodl, no_details
     assert_eq!(failed_payments, 1); // lightning_minimal
 
     // Test filtering by method
@@ -1028,7 +1059,7 @@ pub async fn test_storage(storage: Box<dyn Storage>) {
         .iter()
         .filter(|p| p.method == PaymentMethod::Lightning)
         .count();
-    assert_eq!(lightning_count, 4); // lightning_lnurl_pay, lightning_lnurl_withdraw, lightning_minimal, lightning_lnurl_receive
+    assert_eq!(lightning_count, 5); // lightning_lnurl_pay, lightning_lnurl_withdraw, lightning_hodl, lightning_minimal, lightning_lnurl_receive
 
     // Test 9: Lightning payment with lnurl receive metadata (zap request and sender comment)
     let lightning_zap_payment = Payment {
@@ -1041,10 +1072,9 @@ pub async fn test_storage(storage: Box<dyn Storage>) {
         method: PaymentMethod::Lightning,
         details: Some(PaymentDetails::Lightning {
             description: Some("Zap payment".to_string()),
-            preimage: Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01".to_string()),
             invoice: "lnbc1000n1pjqxyz9pp5zap123def456ghi789jkl012mno345pqr678stu901vwx234yz567890abcdefghijklmnopqrstuvwxyz".to_string(),
-            payment_hash: "zaphash1234567890abcdef1234567890abcdef1234567890abcdef12345678".to_string(),
             destination_pubkey: "03zappubkey123456789abcdef0123456789abcdef0123456789abcdef0123456701".to_string(),
+            htlc_details: test_lightning_htlc("zaphash1234567890abcdef1234567890abcdef1234567890abcdef12345678"),
             lnurl_pay_info: None,
             lnurl_withdraw_info: None,
             lnurl_receive_metadata: None,
@@ -1114,10 +1144,9 @@ pub async fn test_storage(storage: Box<dyn Storage>) {
         method: PaymentMethod::Lightning,
         details: Some(PaymentDetails::Lightning {
             description: Some("Another zap".to_string()),
-            preimage: None,
             invoice: "lnbc500n1pjqxyz9pp5zap2".to_string(),
-            payment_hash: "zaphash2".to_string(),
             destination_pubkey: "03zappubkey2".to_string(),
+            htlc_details: test_lightning_htlc("zaphash2"),
             lnurl_pay_info: None,
             lnurl_withdraw_info: None,
             lnurl_receive_metadata: None,
@@ -1135,10 +1164,9 @@ pub async fn test_storage(storage: Box<dyn Storage>) {
         method: PaymentMethod::Lightning,
         details: Some(PaymentDetails::Lightning {
             description: Some("Third zap".to_string()),
-            preimage: None,
             invoice: "lnbc250n1pjqxyz9pp5zap3".to_string(),
-            payment_hash: "zaphash3".to_string(),
             destination_pubkey: "03zappubkey3".to_string(),
+            htlc_details: test_lightning_htlc("zaphash3"),
             lnurl_pay_info: None,
             lnurl_withdraw_info: None,
             lnurl_receive_metadata: None,
@@ -1357,10 +1385,9 @@ pub async fn test_payment_type_filtering(storage: Box<dyn Storage>) {
         method: PaymentMethod::Lightning,
         details: Some(PaymentDetails::Lightning {
             invoice: "lnbc1".to_string(),
-            payment_hash: "hash1".to_string(),
             destination_pubkey: "pubkey1".to_string(),
+            htlc_details: test_lightning_htlc("hash1"),
             description: None,
-            preimage: None,
             lnurl_pay_info: None,
             lnurl_withdraw_info: None,
             lnurl_receive_metadata: None,
@@ -1378,10 +1405,9 @@ pub async fn test_payment_type_filtering(storage: Box<dyn Storage>) {
         method: PaymentMethod::Lightning,
         details: Some(PaymentDetails::Lightning {
             invoice: "lnbc2".to_string(),
-            payment_hash: "hash2".to_string(),
             destination_pubkey: "pubkey2".to_string(),
+            htlc_details: test_lightning_htlc("hash2"),
             description: None,
-            preimage: None,
             lnurl_pay_info: None,
             lnurl_withdraw_info: None,
             lnurl_receive_metadata: None,
@@ -1550,10 +1576,9 @@ pub async fn test_asset_filtering(storage: Box<dyn Storage>) {
         method: PaymentMethod::Lightning,
         details: Some(PaymentDetails::Lightning {
             invoice: "lnbc1".to_string(),
-            payment_hash: "hash1".to_string(),
             destination_pubkey: "pubkey1".to_string(),
+            htlc_details: test_lightning_htlc("hash1"),
             description: None,
-            preimage: None,
             lnurl_pay_info: None,
             lnurl_withdraw_info: None,
             lnurl_receive_metadata: None,
@@ -2286,10 +2311,9 @@ pub async fn test_combined_filters(storage: Box<dyn Storage>) {
         method: PaymentMethod::Lightning,
         details: Some(PaymentDetails::Lightning {
             invoice: "lnbc1".to_string(),
-            payment_hash: "hash1".to_string(),
             destination_pubkey: "pubkey1".to_string(),
+            htlc_details: test_lightning_htlc("hash1"),
             description: None,
-            preimage: None,
             lnurl_pay_info: None,
             lnurl_withdraw_info: None,
             lnurl_receive_metadata: None,
@@ -2307,10 +2331,9 @@ pub async fn test_combined_filters(storage: Box<dyn Storage>) {
         method: PaymentMethod::Lightning,
         details: Some(PaymentDetails::Lightning {
             invoice: "lnbc2".to_string(),
-            payment_hash: "hash2".to_string(),
             destination_pubkey: "pubkey2".to_string(),
+            htlc_details: test_lightning_htlc("hash2"),
             description: None,
-            preimage: None,
             lnurl_pay_info: None,
             lnurl_withdraw_info: None,
             lnurl_receive_metadata: None,
@@ -2689,4 +2712,175 @@ pub async fn test_payment_metadata_merge(storage: Box<dyn Storage>) {
         "conversion_info should be preserved, not cleared by partial update"
     );
     assert_eq!(conversion_info.as_ref().unwrap().conversion_id, "conv_123");
+}
+
+#[allow(clippy::too_many_lines)]
+pub async fn test_lightning_htlc_details_and_status_filtering(storage: Box<dyn Storage>) {
+    // Lightning payment with htlc_details WaitingForPreimage
+    let htlc_waiting = Payment {
+        id: "htlc_waiting".to_string(),
+        payment_type: PaymentType::Receive,
+        status: PaymentStatus::Pending,
+        amount: 10_000,
+        fees: 0,
+        timestamp: 1000,
+        method: PaymentMethod::Lightning,
+        details: Some(PaymentDetails::Lightning {
+            invoice: "lnbc_htlc1".to_string(),
+            destination_pubkey: "pubkey1".to_string(),
+            htlc_details: SparkHtlcDetails {
+                payment_hash: "htlc_hash1".to_string(),
+                preimage: None,
+                expiry_time: 1_700_000_000,
+                status: SparkHtlcStatus::WaitingForPreimage,
+            },
+            description: Some("hodl invoice".to_string()),
+            lnurl_pay_info: None,
+            lnurl_withdraw_info: None,
+            lnurl_receive_metadata: None,
+        }),
+        conversion_details: None,
+    };
+
+    // Lightning payment with htlc_details PreimageShared (claimed)
+    let htlc_claimed = Payment {
+        id: "htlc_claimed".to_string(),
+        payment_type: PaymentType::Receive,
+        status: PaymentStatus::Completed,
+        amount: 20_000,
+        fees: 0,
+        timestamp: 2000,
+        method: PaymentMethod::Lightning,
+        details: Some(PaymentDetails::Lightning {
+            invoice: "lnbc_htlc2".to_string(),
+            destination_pubkey: "pubkey2".to_string(),
+            htlc_details: SparkHtlcDetails {
+                payment_hash: "htlc_hash2".to_string(),
+                preimage: Some("preimage_abc".to_string()),
+                expiry_time: 1_700_001_000,
+                status: SparkHtlcStatus::PreimageShared,
+            },
+            description: None,
+            lnurl_pay_info: None,
+            lnurl_withdraw_info: None,
+            lnurl_receive_metadata: None,
+        }),
+        conversion_details: None,
+    };
+
+    // Regular Lightning payment
+    let regular_lightning = Payment {
+        id: "regular_ln".to_string(),
+        payment_type: PaymentType::Send,
+        status: PaymentStatus::Completed,
+        amount: 5_000,
+        fees: 10,
+        timestamp: 3000,
+        method: PaymentMethod::Lightning,
+        details: Some(PaymentDetails::Lightning {
+            invoice: "lnbc_regular".to_string(),
+            destination_pubkey: "pubkey3".to_string(),
+            htlc_details: SparkHtlcDetails {
+                payment_hash: "regular_hash".to_string(),
+                preimage: Some("preimage_def".to_string()),
+                expiry_time: 1_700_002_000,
+                status: SparkHtlcStatus::PreimageShared,
+            },
+            description: None,
+            lnurl_pay_info: None,
+            lnurl_withdraw_info: None,
+            lnurl_receive_metadata: None,
+        }),
+        conversion_details: None,
+    };
+
+    // Non-Lightning payment (should never appear in Lightning filters)
+    let spark_payment = Payment {
+        id: "spark_1".to_string(),
+        payment_type: PaymentType::Send,
+        status: PaymentStatus::Completed,
+        amount: 1_000,
+        fees: 0,
+        timestamp: 4000,
+        method: PaymentMethod::Spark,
+        details: Some(PaymentDetails::Spark {
+            invoice_details: None,
+            htlc_details: None,
+            conversion_info: None,
+        }),
+        conversion_details: None,
+    };
+
+    storage.insert_payment(htlc_waiting.clone()).await.unwrap();
+    storage.insert_payment(htlc_claimed.clone()).await.unwrap();
+    storage
+        .insert_payment(regular_lightning.clone())
+        .await
+        .unwrap();
+    storage.insert_payment(spark_payment).await.unwrap();
+
+    // Verify htlc_details is persisted and fetched correctly
+    let fetched = storage
+        .get_payment_by_id("htlc_waiting".to_string())
+        .await
+        .unwrap();
+    let Some(PaymentDetails::Lightning { htlc_details, .. }) = &fetched.details else {
+        panic!("Expected Lightning payment details");
+    };
+    assert_eq!(htlc_details.status, SparkHtlcStatus::WaitingForPreimage);
+    assert_eq!(htlc_details.expiry_time, 1_700_000_000);
+
+    let fetched = storage
+        .get_payment_by_id("regular_ln".to_string())
+        .await
+        .unwrap();
+    let Some(PaymentDetails::Lightning { htlc_details, .. }) = &fetched.details else {
+        panic!("Expected Lightning payment details");
+    };
+    assert_eq!(htlc_details.status, SparkHtlcStatus::PreimageShared);
+
+    // Filter: htlc_status = WaitingForPreimage → only WaitingForPreimage Lightning payments
+    let waiting = storage
+        .list_payments(ListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Lightning {
+                htlc_status: Some(vec![SparkHtlcStatus::WaitingForPreimage]),
+            }]),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(waiting.len(), 1);
+    assert_eq!(waiting[0].id, "htlc_waiting");
+
+    // Filter: htlc_status = PreimageShared → PreimageShared Lightning payments
+    let claimed = storage
+        .list_payments(ListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Lightning {
+                htlc_status: Some(vec![SparkHtlcStatus::PreimageShared]),
+            }]),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(claimed.len(), 2);
+    assert!(claimed.iter().any(|p| p.id == "htlc_claimed"));
+    assert!(claimed.iter().any(|p| p.id == "regular_ln"));
+
+    // Filter: htlc_status = [WaitingForPreimage, PreimageShared] → all Lightning payments
+    let all_htlc = storage
+        .list_payments(ListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Lightning {
+                htlc_status: Some(vec![
+                    SparkHtlcStatus::WaitingForPreimage,
+                    SparkHtlcStatus::PreimageShared,
+                ]),
+            }]),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(all_htlc.len(), 3);
+    assert!(all_htlc.iter().any(|p| p.id == "htlc_waiting"));
+    assert!(all_htlc.iter().any(|p| p.id == "htlc_claimed"));
+    assert!(all_htlc.iter().any(|p| p.id == "regular_ln"));
 }

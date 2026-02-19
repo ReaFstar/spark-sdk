@@ -446,14 +446,41 @@ impl SparkWallet {
 
         // Collect the wallet transfer information from the lightning send payment result. If
         // not present, we need to query for the SSP user request to get the transfer details.
-        let wallet_transfer = match lightning_payment.lightning_send_payment {
-            Some(_) => WalletTransfer::from_transfer(
-                lightning_payment.transfer,
-                None,
-                None,
-                self.identity_public_key,
-                self.config.service_provider_config.identity_public_key,
-            ),
+        let payment_hash = lightning_payment.payment_hash;
+        let lightning_send_payment = lightning_payment.lightning_send_payment;
+        let wallet_transfer = match &lightning_send_payment {
+            Some(lsp) => {
+                let preimage = lsp
+                    .payment_preimage
+                    .as_deref()
+                    .map(Preimage::from_hex)
+                    .transpose()
+                    .map_err(SparkWalletError::ServiceError)?;
+                let preimage_request = PreimageRequest {
+                    payment_hash,
+                    status: if preimage.is_some() {
+                        PreimageRequestStatus::PreimageShared
+                    } else {
+                        PreimageRequestStatus::WaitingForPreimage
+                    },
+                    created_time: UNIX_EPOCH
+                        + Duration::from_secs(
+                            lightning_payment.transfer.created_time.unwrap_or_default(),
+                        ),
+                    expiry_time: UNIX_EPOCH
+                        + Duration::from_secs(
+                            lightning_payment.transfer.expiry_time.unwrap_or_default(),
+                        ),
+                    preimage,
+                };
+                WalletTransfer::from_transfer(
+                    lightning_payment.transfer,
+                    None,
+                    Some(preimage_request),
+                    self.identity_public_key,
+                    self.config.service_provider_config.identity_public_key,
+                )
+            }
             None => {
                 create_transfer(
                     lightning_payment.transfer,
@@ -470,7 +497,7 @@ impl SparkWallet {
 
         Ok(PayLightningInvoiceResult {
             transfer: wallet_transfer,
-            lightning_payment: lightning_payment.lightning_send_payment,
+            lightning_payment: lightning_send_payment,
         })
     }
 
@@ -493,6 +520,28 @@ impl SparkWallet {
                 None,
                 expiry_secs,
                 include_spark_address,
+                public_key,
+            )
+            .await?)
+    }
+
+    /// Creates a HODL Lightning invoice. The SSP will hold the HTLC until
+    /// `claim_htlc` is called with the preimage matching the payment_hash.
+    pub async fn create_hodl_lightning_invoice(
+        &self,
+        amount_sat: u64,
+        description: Option<InvoiceDescription>,
+        payment_hash: Hash,
+        public_key: Option<PublicKey>,
+        expiry_secs: Option<u32>,
+    ) -> Result<LightningReceivePayment, SparkWalletError> {
+        Ok(self
+            .lightning_service
+            .create_hodl_lightning_invoice(
+                amount_sat,
+                description,
+                payment_hash,
+                expiry_secs,
                 public_key,
             )
             .await?)
@@ -838,6 +887,8 @@ impl SparkWallet {
         preimage: &Preimage,
     ) -> Result<WalletTransfer, SparkWalletError> {
         let transfer = self.htlc_service.provide_preimage(preimage).await?;
+
+        // Fetch HTLC preimage request data
         let preimage_request = self
             .htlc_service
             .query_htlc(
@@ -855,9 +906,18 @@ impl SparkWallet {
             .first()
             .cloned()
             .ok_or(SparkWalletError::Generic("HTLC not found".to_string()))?;
+
+        // Also fetch SSP transfer data so Lightning payments get user_request
+        let ssp_transfer = self
+            .ssp_client
+            .get_transfers(vec![transfer.id.to_string()])
+            .await?
+            .into_iter()
+            .next();
+
         Ok(WalletTransfer::from_transfer(
             transfer,
-            None,
+            ssp_transfer,
             Some(preimage_request.into()),
             self.identity_public_key,
             self.config.service_provider_config.identity_public_key,
@@ -1984,10 +2044,7 @@ impl BackgroundProcessor {
                 .next()
         };
 
-        // If there is an SSP transfer, we can avoid looking for the HTLC as it will not be present
-        let htlc = if transfer.transfer_type == spark::services::TransferType::PreimageSwap
-            && ssp_transfer.is_none()
-        {
+        let htlc = if transfer.transfer_type == spark::services::TransferType::PreimageSwap {
             self.htlc_service
                 .query_htlc(
                     QueryHtlcFilter {

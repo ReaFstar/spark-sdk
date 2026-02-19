@@ -13,11 +13,12 @@ class MigrationManager {
   }
 
   /**
-   * Run all pending migrations
+   * Run all pending migrations, or up to a specific version.
+   * @param {number|null} targetVersion - Target version to migrate to (default: latest)
    */
-  migrate() {
+  migrate(targetVersion = null) {
     const currentVersion = this._getCurrentVersion();
-    const targetVersion = this.migrations.length;
+    targetVersion = targetVersion ?? this.migrations.length;
 
     if (currentVersion >= targetVersion) {
       this._log("info", `Database is up to date (version ${currentVersion})`);
@@ -343,6 +344,27 @@ class MigrationManager {
           `DELETE FROM sync_state`,
           `UPDATE sync_revision SET revision = 0`,
           `DELETE FROM settings WHERE key = 'sync_initial_complete'`
+        ]
+      },
+      {
+        name: "Add htlc_status and htlc_expiry_time to lightning payments",
+        sql: [
+          `ALTER TABLE payment_details_lightning ADD COLUMN htlc_status TEXT NOT NULL DEFAULT 'waitingForPreimage'`,
+          `ALTER TABLE payment_details_lightning ADD COLUMN htlc_expiry_time INTEGER NOT NULL DEFAULT 0`,
+        ]
+      },
+      {
+        name: "Backfill htlc_status for existing Lightning payments",
+        sql: [
+          `UPDATE payment_details_lightning
+           SET htlc_status = CASE
+                   WHEN (SELECT status FROM payments WHERE id = payment_id) = 'completed' THEN 'preimageShared'
+                   WHEN (SELECT status FROM payments WHERE id = payment_id) = 'pending' THEN 'waitingForPreimage'
+                   ELSE 'returned'
+               END`,
+          `UPDATE settings
+           SET value = json_set(value, '$.offset', 0)
+           WHERE key = 'sync_offset' AND json_valid(value)`,
         ]
       },
     ];

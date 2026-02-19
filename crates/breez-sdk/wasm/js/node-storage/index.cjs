@@ -48,6 +48,8 @@ const SELECT_PAYMENT_SQL = `
            l.destination_pubkey AS lightning_destination_pubkey,
            COALESCE(l.description, pm.lnurl_description) AS lightning_description,
            l.preimage AS lightning_preimage,
+           l.htlc_status AS lightning_htlc_status,
+           l.htlc_expiry_time AS lightning_htlc_expiry_time,
            pm.lnurl_pay_info,
            pm.lnurl_withdraw_info,
            pm.conversion_info,
@@ -200,18 +202,30 @@ class SqliteStorage {
         const allPaymentDetailsClauses = [];
         for (const paymentDetailsFilter of request.paymentDetailsFilter) {
           const paymentDetailsClauses = [];
-          // Filter by Spark HTLC status
+          // Filter by HTLC status (Spark or Lightning)
+          const htlcAlias =
+            paymentDetailsFilter.type === "spark" ? "s"
+              : paymentDetailsFilter.type === "lightning" ? "l"
+                : null;
           if (
-            paymentDetailsFilter.type === "spark" &&
+            htlcAlias &&
             paymentDetailsFilter.htlcStatus !== undefined &&
             paymentDetailsFilter.htlcStatus.length > 0
           ) {
             const placeholders = paymentDetailsFilter.htlcStatus
               .map(() => "?")
               .join(", ");
-            paymentDetailsClauses.push(
-              `json_extract(s.htlc_details, '$.status') IN (${placeholders})`
-            );
+            if (htlcAlias === "l") {
+              // Lightning: htlc_status is a direct column
+              paymentDetailsClauses.push(
+                `l.htlc_status IN (${placeholders})`
+              );
+            } else {
+              // Spark: htlc_details is still JSON
+              paymentDetailsClauses.push(
+                `json_extract(s.htlc_details, '$.status') IN (${placeholders})`
+              );
+            }
             params.push(...paymentDetailsFilter.htlcStatus);
           }
           // Filter by token conversion info presence
@@ -245,6 +259,7 @@ class SqliteStorage {
             paymentDetailsClauses.push("t.tx_type = ?");
             params.push(paymentDetailsFilter.txType);
           }
+
 
           if (paymentDetailsClauses.length > 0) {
             allPaymentDetailsClauses.push(`(${paymentDetailsClauses.join(" AND ")})`);
@@ -321,15 +336,17 @@ class SqliteStorage {
            spark=excluded.spark`
       );
       const lightningInsert = this.db.prepare(
-        `INSERT INTO payment_details_lightning 
-          (payment_id, invoice, payment_hash, destination_pubkey, description, preimage) 
-          VALUES (@id, @invoice, @paymentHash, @destinationPubkey, @description, @preimage)
+        `INSERT INTO payment_details_lightning
+          (payment_id, invoice, payment_hash, destination_pubkey, description, preimage, htlc_status, htlc_expiry_time)
+          VALUES (@id, @invoice, @paymentHash, @destinationPubkey, @description, @preimage, @htlcStatus, @htlcExpiryTime)
           ON CONFLICT(payment_id) DO UPDATE SET
             invoice=excluded.invoice,
             payment_hash=excluded.payment_hash,
             destination_pubkey=excluded.destination_pubkey,
             description=excluded.description,
-            preimage=excluded.preimage`
+            preimage=COALESCE(excluded.preimage, payment_details_lightning.preimage),
+            htlc_status=COALESCE(excluded.htlc_status, payment_details_lightning.htlc_status),
+            htlc_expiry_time=COALESCE(excluded.htlc_expiry_time, payment_details_lightning.htlc_expiry_time)`
       );
       const tokenInsert = this.db.prepare(
         `INSERT INTO payment_details_token 
@@ -385,10 +402,12 @@ class SqliteStorage {
           lightningInsert.run({
             id: payment.id,
             invoice: payment.details.invoice,
-            paymentHash: payment.details.paymentHash,
+            paymentHash: payment.details.htlcDetails.paymentHash,
             destinationPubkey: payment.details.destinationPubkey,
             description: payment.details.description,
-            preimage: payment.details.preimage,
+            preimage: payment.details.htlcDetails?.preimage,
+            htlcStatus: payment.details.htlcDetails?.status || null,
+            htlcExpiryTime: payment.details.htlcDetails?.expiryTime || 0,
           });
         }
 
@@ -696,10 +715,16 @@ class SqliteStorage {
       details = {
         type: "lightning",
         invoice: row.lightning_invoice,
-        paymentHash: row.lightning_payment_hash,
         destinationPubkey: row.lightning_destination_pubkey,
         description: row.lightning_description,
-        preimage: row.lightning_preimage,
+        htlcDetails: row.lightning_htlc_status
+          ? {
+              paymentHash: row.lightning_payment_hash,
+              preimage: row.lightning_preimage || null,
+              expiryTime: row.lightning_htlc_expiry_time || 0,
+              status: row.lightning_htlc_status,
+            }
+          : (() => { throw new StorageError(`htlc_status is required for Lightning payment ${row.id}`); })(),
       };
 
       if (row.lnurl_pay_info) {
