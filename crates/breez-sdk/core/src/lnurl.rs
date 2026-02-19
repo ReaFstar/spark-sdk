@@ -383,6 +383,13 @@ impl LnurlServerClient for DefaultLnurlServerClient {
             .await
             .map_err(|e| LnurlServerError::RequestFailure(e.to_string()))?;
 
-        Self::handle_response(response.status, &response.body)
+        match response.status {
+            401 => Err(LnurlServerError::InvalidApiKey),
+            s if (200..300).contains(&s) => Ok(()),
+            other => Err(LnurlServerError::Network {
+                statuscode: other,
+                message: Some(response.body),
+            }),
+        }
     }
 }
