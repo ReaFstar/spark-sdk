@@ -84,7 +84,8 @@ const exampleListClaimableHtlcPayments = async (sdk: BreezSdk): Promise<Payment[
       htlcStatus: [SparkHtlcStatus.WaitingForPreimage],
       conversionRefundNeeded: undefined
     }), new PaymentDetailsFilter.Lightning({
-      htlcStatus: [SparkHtlcStatus.WaitingForPreimage]
+      htlcStatus: [SparkHtlcStatus.WaitingForPreimage],
+      hasLnurlPreimage: undefined
     })],
     assetFilter: undefined,
     fromTimestamp: undefined,

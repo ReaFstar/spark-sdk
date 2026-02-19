@@ -100,7 +100,8 @@ class Htlcs {
                         conversionRefundNeeded = null
                     ),
                     PaymentDetailsFilter.Lightning(
-                        htlcStatus = listOf(SparkHtlcStatus.WAITING_FOR_PREIMAGE)
+                        htlcStatus = listOf(SparkHtlcStatus.WAITING_FOR_PREIMAGE),
+                        hasLnurlPreimage = null
                     )
                 )
             )

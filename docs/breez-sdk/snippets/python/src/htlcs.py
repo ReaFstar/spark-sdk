@@ -93,6 +93,7 @@ async def list_claimable_htlc_payments(sdk: BreezSdk):
             )),
             cast(PaymentDetailsFilter, PaymentDetailsFilter.LIGHTNING(
                 htlc_status=[SparkHtlcStatus.WAITING_FOR_PREIMAGE],
+                has_lnurl_preimage=None,
             )),
         ],
     )

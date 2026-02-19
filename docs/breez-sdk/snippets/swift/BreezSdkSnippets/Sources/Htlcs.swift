@@ -98,7 +98,8 @@ func listClaimableHtlcPayments(sdk: BreezSdk) async throws -> [Payment] {
                 conversionRefundNeeded: nil
             ),
             PaymentDetailsFilter.lightning(
-                htlcStatus: [SparkHtlcStatus.waitingForPreimage]
+                htlcStatus: [SparkHtlcStatus.waitingForPreimage],
+                hasLnurlPreimage: nil
             ),
         ]
     )
