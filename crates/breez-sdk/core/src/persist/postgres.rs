@@ -1283,7 +1283,7 @@ impl Storage for PostgresStorage {
         let mut result: HashMap<String, Vec<Payment>> = HashMap::new();
         for row in rows {
             let payment = map_payment(&row)?;
-            let parent_payment_id: String = row.get(29);
+            let parent_payment_id: String = row.get(30);
             result.entry(parent_payment_id).or_default().push(payment);
         }
 
@@ -1766,7 +1766,7 @@ impl Storage for PostgresStorage {
 }
 
 /// Base query for payment lookups.
-/// Column indices 0-28 are used by `map_payment`, index 29 (`parent_payment_id`) is only used by `get_payments_by_parent_ids`.
+/// Column indices 0-29 are used by `map_payment`, index 30 (`parent_payment_id`) is only used by `get_payments_by_parent_ids`.
 const SELECT_PAYMENT_SQL: &str = "
     SELECT p.id,
            p.payment_type,
@@ -1797,6 +1797,7 @@ const SELECT_PAYMENT_SQL: &str = "
            lrm.nostr_zap_request AS lnurl_nostr_zap_request,
            lrm.nostr_zap_receipt AS lnurl_nostr_zap_receipt,
            lrm.sender_comment AS lnurl_sender_comment,
+           lrm.payment_hash AS lnurl_payment_hash,
            pm.parent_payment_id
       FROM payments p
       LEFT JOIN payment_details_lightning l ON p.id = l.payment_id
@@ -1848,21 +1849,21 @@ fn map_payment(row: &Row) -> Result<Payment, StorageError> {
             let lnurl_nostr_zap_request: Option<String> = row.get(26);
             let lnurl_nostr_zap_receipt: Option<String> = row.get(27);
             let lnurl_sender_comment: Option<String> = row.get(28);
+            let lnurl_payment_hash: Option<String> = row.get(29);
 
             let lnurl_pay_info: Option<LnurlPayInfo> = from_json_opt(lnurl_pay_info_json)?;
             let lnurl_withdraw_info: Option<LnurlWithdrawInfo> =
                 from_json_opt(lnurl_withdraw_info_json)?;
 
-            let lnurl_receive_metadata =
-                if lnurl_nostr_zap_request.is_some() || lnurl_sender_comment.is_some() {
-                    Some(LnurlReceiveMetadata {
-                        nostr_zap_request: lnurl_nostr_zap_request,
-                        nostr_zap_receipt: lnurl_nostr_zap_receipt,
-                        sender_comment: lnurl_sender_comment,
-                    })
-                } else {
-                    None
-                };
+            let lnurl_receive_metadata = if lnurl_payment_hash.is_some() {
+                Some(LnurlReceiveMetadata {
+                    nostr_zap_request: lnurl_nostr_zap_request,
+                    nostr_zap_receipt: lnurl_nostr_zap_receipt,
+                    sender_comment: lnurl_sender_comment,
+                })
+            } else {
+                None
+            };
             Some(PaymentDetails::Lightning {
                 invoice,
                 destination_pubkey,

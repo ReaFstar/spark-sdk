@@ -379,7 +379,7 @@ impl LnurlServerClient for DefaultLnurlServerClient {
 
         let response = self
             .http_client
-            .post(url, None, Some(body))
+            .post(url, Some(self.get_post_headers()), Some(body))
             .await
             .map_err(|e| LnurlServerError::RequestFailure(e.to_string()))?;
 

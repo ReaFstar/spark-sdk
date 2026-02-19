@@ -62,6 +62,7 @@ const SELECT_PAYMENT_SQL = `
            lrm.nostr_zap_request AS lnurl_nostr_zap_request,
            lrm.nostr_zap_receipt AS lnurl_nostr_zap_receipt,
            lrm.sender_comment AS lnurl_sender_comment,
+           lrm.payment_hash AS lnurl_payment_hash,
            pm.parent_payment_id
       FROM payments p
       LEFT JOIN payment_details_lightning l ON p.id = l.payment_id
@@ -763,7 +764,7 @@ class SqliteStorage {
         }
       }
 
-      if (row.lnurl_nostr_zap_request || row.lnurl_sender_comment) {
+      if (row.lnurl_payment_hash) {
         details.lnurlReceiveMetadata = {
           nostrZapRequest: row.lnurl_nostr_zap_request || null,
           nostrZapReceipt: row.lnurl_nostr_zap_receipt || null,
