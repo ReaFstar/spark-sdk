@@ -218,7 +218,7 @@ async fn run_single_claim_benchmark(
                 .await?;
 
                 let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
-                if done % 10 == 0 || done == total {
+                if done.is_multiple_of(10) || done == total {
                     info!("Sent {}/{} transfers", done, total);
                 }
                 Ok::<(), anyhow::Error>(())
