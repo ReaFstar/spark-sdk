@@ -1120,3 +1120,103 @@ async fn test_08_lnurl_send_all_with_fee_overpayment(
     info!("=== Test test_08_lnurl_send_all_with_fee_overpayment PASSED ===");
     Ok(())
 }
+
+/// Test that the invoice expiry query parameter is passed through to the generated invoice
+#[rstest]
+#[test_log::test(tokio::test)]
+async fn test_09_invoice_expiry_parameter(#[future] bob_sdk: Result<SdkInstance>) -> Result<()> {
+    info!("=== Starting test_09_invoice_expiry_parameter ===");
+
+    let bob = bob_sdk.await?;
+    let username = "bobexpiry";
+
+    // Register a Lightning address for Bob
+    bob.sdk
+        .register_lightning_address(RegisterLightningAddressRequest {
+            username: username.to_string(),
+            description: Some("Expiry test address".to_string()),
+        })
+        .await?;
+
+    // Parse the lightning address to get the callback URL
+    let bob_lnurl_domain = bob
+        .lnurl_fixture
+        .as_ref()
+        .unwrap()
+        .http_url()
+        .strip_prefix("http://")
+        .unwrap();
+    let lightning_address = format!("{username}@{bob_lnurl_domain}");
+    let parse_response = bob.sdk.parse(&lightning_address).await?;
+    let InputType::LightningAddress(details) = parse_response else {
+        anyhow::bail!("Expected Lightning address");
+    };
+
+    let callback = &details.pay_request.callback;
+    let amount_msat = 10_000_000; // 10k sats in msats
+    let custom_expiry_secs = 600_u32;
+
+    // Request invoice WITH custom expiry
+    let http_client = DefaultHttpClient::default();
+    let url_with_expiry = format!("{callback}?amount={amount_msat}&expiry={custom_expiry_secs}");
+    let response = http_client
+        .get(url_with_expiry.clone(), None)
+        .await
+        .map_err(|e| anyhow::anyhow!("Invoice request failed: {e:?}"))?;
+    assert!(
+        response.is_success(),
+        "Invoice request failed: {}",
+        response.status
+    );
+    let json: serde_json::Value = response.json()?;
+    let invoice_str = json["pr"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("No invoice in response: {json}"))?;
+
+    info!("Got invoice string {invoice_str}");
+    // Parse the invoice and verify the expiry
+    let parsed = bob.sdk.parse(invoice_str).await?;
+    let InputType::Bolt11Invoice(invoice_details) = parsed else {
+        anyhow::bail!("Expected Bolt11Invoice");
+    };
+    assert_eq!(
+        invoice_details.expiry, custom_expiry_secs as u64,
+        "Invoice expiry should match the requested expiry parameter"
+    );
+    info!(
+        "Invoice with custom expiry verified: {} secs",
+        invoice_details.expiry
+    );
+
+    // Request invoice WITHOUT expiry (should use server default)
+    let url_without_expiry = format!("{callback}?amount={amount_msat}");
+    let response = http_client
+        .get(url_without_expiry.clone(), None)
+        .await
+        .map_err(|e| anyhow::anyhow!("Invoice request failed: {e:?}"))?;
+    assert!(
+        response.is_success(),
+        "Invoice request failed: {}",
+        response.status
+    );
+    let json: serde_json::Value = response.json()?;
+    let invoice_str = json["pr"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("No invoice in response: {json}"))?;
+
+    let parsed = bob.sdk.parse(invoice_str).await?;
+    let InputType::Bolt11Invoice(invoice_details) = parsed else {
+        anyhow::bail!("Expected Bolt11Invoice");
+    };
+    assert_ne!(
+        invoice_details.expiry, custom_expiry_secs as u64,
+        "Default expiry should differ from the custom value"
+    );
+    info!(
+        "Invoice with default expiry verified: {} secs",
+        invoice_details.expiry
+    );
+
+    info!("=== Test test_09_invoice_expiry_parameter PASSED ===");
+    Ok(())
+}
