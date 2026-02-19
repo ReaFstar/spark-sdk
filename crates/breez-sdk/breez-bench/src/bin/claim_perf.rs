@@ -144,7 +144,7 @@ async fn run_single_claim_benchmark(
     let receiver_dir = TempDir::new("claim-bench-receiver")?;
     let mut temp_receiver_config = default_config(Network::Regtest);
     temp_receiver_config.optimization_config.auto_enabled = false;
-    let temp_receiver = build_sdk_with_custom_config(
+    let mut temp_receiver = build_sdk_with_custom_config(
         receiver_dir.path().to_string_lossy().to_string(),
         receiver_seed,
         temp_receiver_config,
@@ -157,7 +157,7 @@ async fn run_single_claim_benchmark(
     info!("Waiting for sender sync...");
     wait_for_synced_event(&mut sender_events, 120).await?;
     info!("Waiting for receiver sync...");
-    wait_for_synced_event(&mut temp_receiver.events.into(), 120).await?;
+    wait_for_synced_event(&mut temp_receiver.events, 120).await?;
 
     // Get receiver's Spark address
     let receiver_address = temp_receiver

@@ -5,8 +5,8 @@
 //! one completes. Different sync types are processed in order.
 
 use std::sync::Arc;
-
 use tokio::sync::{Mutex, broadcast, oneshot};
+use tokio_with_wasm::alias as tokio;
 use tracing::debug;
 
 use super::{SyncRequest, SyncType};
@@ -168,15 +168,5 @@ impl SyncCoordinator {
         reply_rx
             .await
             .map_err(|_| SdkError::Generic("Sync reply channel closed".to_string()))?
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_coordinator_creation() {
-        let _coordinator = SyncCoordinator::new();
     }
 }
