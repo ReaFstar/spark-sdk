@@ -1,7 +1,7 @@
 [book]
 language = "en"
 src = "src"
-title = "Breez SDK - Nodeless (Spark)"
+title = "Breez SDK - Spark"
 
 [output.html]
 theme = "theme"
