@@ -115,12 +115,13 @@ Contributions are always welcome. Please read our [contribution guide](CONTRIBUT
 - [x] LNURL-Auth
 - [x] Fiat on-ramp
 - [x] BTC <> USDB swaps
-- [ ] Seedless restore
+- [x] Hodl invoice support
+- [ ] Seedless restore 
 - [ ] Stable balance
-- [ ] USDT0 support
+- [ ] USDT support
+- [ ] USDC support 
 - [ ] NWC
 - [ ] WebLN
-- [ ] Hodl invoice support 
 - [ ] Bolt12
 - [ ] Add additional fees via a dedicated portal
 
