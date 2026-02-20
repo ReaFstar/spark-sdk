@@ -65,8 +65,18 @@ The SDK can automatically optimize the Spark leaf set to maximize unilateral exi
 This configuration controls optimization through the following options:
 
 - **Automatic optimization enabled**: whether optimization runs automatically when a payment is sent or received. Enabled by default.
-- **Multiplicity**: the desired multiplicity for the leaf set. Values range from 0 to 5. Default value is 1. Setting it to 0 fully optimizes for unilateral exit efficiency. Setting it to a value greater than 0 also optimizes for payment speed, with higher values prioritizing payment speed more aggressively at the cost of higher unilateral exit fees.
+- **Multiplicity**: the desired multiplicity for the leaf set. Default value is 1. Setting it to 0 fully optimizes for unilateral exit efficiency. Setting it to a value greater than 0 also optimizes for payment speed, with higher values prioritizing payment speed more aggressively at the cost of higher unilateral exit fees. Values above 5 are intended for high-throughput server environments that require maximum TPS and are not recommended for end-user wallets.
 
 See [Custom leaf optimization](./optimize.md) for more information and recommendations on how to configure optimization.
 
 {{#tabs config:optimization-configuration}}
+
+## Maximum concurrent claims
+
+Controls how many pending Spark transfers can be claimed in parallel. The default value of 4 provides a good balance between throughput and resource usage for most applications.
+
+For server environments or applications that receive a high volume of incoming payments, increasing this value can further improve throughput by processing more claims concurrently.
+
+**Default**: 4
+
+**Recommendation**: The default value works well for most applications. Server applications handling many simultaneous incoming payments may benefit from higher values (e.g., 8-16), depending on their infrastructure capacity. End-user wallets with limited resources may reduce this to 1-2.

@@ -578,6 +578,10 @@ pub struct Config {
     /// When set, received sats will be automatically converted to the specified token
     /// once the balance exceeds the threshold.
     pub stable_balance_config: Option<StableBalanceConfig>,
+    /// Maximum number of concurrent transfer claims.
+    ///
+    /// Default is 4. Increase for server environments with high incoming payment volume.
+    pub max_concurrent_claims: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -590,11 +594,15 @@ pub struct OptimizationConfig {
     ///
     /// Default value is true.
     pub auto_enabled: bool,
-    /// The desired multiplicity for the leaf set. Acceptable values are 0-5.
+    /// The desired multiplicity for the leaf set.
     ///
     /// Setting this to 0 will optimize for maximizing unilateral exit.
     /// Higher values will optimize for minimizing transfer swaps, with higher values
-    /// being more aggressive.
+    /// being more aggressive and allowing better TPS rates.
+    ///
+    /// For end-user wallets, values of 1-5 are recommended. Values above 5 are
+    /// intended for high-throughput server environments and are not recommended
+    /// for end-user wallets due to significantly higher unilateral exit costs.
     ///
     /// Default value is 1.
     pub multiplicity: u8,
@@ -639,6 +647,18 @@ pub struct StableBalanceConfig {
 }
 
 impl Config {
+    /// Validates the configuration.
+    ///
+    /// Returns an error if any configuration values are invalid.
+    pub fn validate(&self) -> Result<(), SdkError> {
+        if self.max_concurrent_claims == 0 {
+            return Err(SdkError::InvalidInput(
+                "max_concurrent_claims must be greater than 0".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
     pub(crate) fn get_all_external_input_parsers(&self) -> Vec<ExternalInputParser> {
         let mut external_input_parsers = Vec::new();
         if self.use_default_external_input_parsers {

@@ -226,6 +226,9 @@ impl SdkBuilder {
     /// Builds the `BreezSdk` instance with the configured components.
     #[allow(clippy::too_many_lines)]
     pub async fn build(self) -> Result<BreezSdk, SdkError> {
+        // Validate configuration
+        self.config.validate()?;
+
         // Create the base signer based on the signer source
         let (signer, account_number) = match self.signer_source {
             SignerSource::Seed {
@@ -368,6 +371,7 @@ impl SdkBuilder {
             self.config.optimization_config.auto_enabled;
         spark_wallet_config.leaf_optimization_options.multiplicity =
             self.config.optimization_config.multiplicity;
+        spark_wallet_config.max_concurrent_claims = self.config.max_concurrent_claims;
 
         let shutdown_sender = watch::channel::<()>(()).0;
 

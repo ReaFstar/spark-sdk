@@ -6,6 +6,9 @@ mod lightning_address;
 mod lnurl;
 mod payments;
 mod sync;
+mod sync_coordinator;
+
+pub(crate) use sync_coordinator::SyncCoordinator;
 
 use bitflags::bitflags;
 use breez_sdk_common::{buy::BuyBitcoinProviderApi, fiat::FiatService, sync::SigningClient};
@@ -32,7 +35,7 @@ pub(crate) const CLAIM_TX_SIZE_VBYTES: u64 = 99;
 pub(crate) const SYNC_PAGING_LIMIT: u32 = 100;
 
 bitflags! {
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, PartialEq, Eq)]
     pub(crate) struct SyncType: u32 {
         const Wallet = 1 << 0;
         const WalletState = 1 << 1;
@@ -56,31 +59,6 @@ pub(crate) struct SyncRequest {
 }
 
 impl SyncRequest {
-    pub(crate) fn full(reply: Option<oneshot::Sender<Result<(), SdkError>>>) -> Self {
-        Self {
-            sync_type: SyncType::Full,
-            reply: Arc::new(Mutex::new(reply)),
-            force: true,
-        }
-    }
-
-    pub(crate) fn no_reply(sync_type: SyncType) -> Self {
-        Self {
-            sync_type,
-            reply: Arc::new(Mutex::new(None)),
-            force: true,
-        }
-    }
-
-    /// For timer-based periodic syncs that respect the debounce interval.
-    pub(crate) fn periodic() -> Self {
-        Self {
-            sync_type: SyncType::Full,
-            reply: Arc::new(Mutex::new(None)),
-            force: false,
-        }
-    }
-
     pub(crate) async fn reply(&self, error: Option<SdkError>) {
         if let Some(reply) = self.reply.lock().await.take() {
             let _ = match error {
@@ -106,7 +84,8 @@ pub struct BreezSdk {
     pub(crate) lnurl_auth_signer: Arc<LnurlAuthSignerAdapter>,
     pub(crate) event_emitter: Arc<EventEmitter>,
     pub(crate) shutdown_sender: watch::Sender<()>,
-    pub(crate) sync_trigger: tokio::sync::broadcast::Sender<SyncRequest>,
+    /// Coordinator for coalescing duplicate sync requests
+    pub(crate) sync_coordinator: SyncCoordinator,
     pub(crate) zap_receipt_trigger: tokio::sync::broadcast::Sender<()>,
     pub(crate) initial_synced_watcher: watch::Receiver<bool>,
     pub(crate) external_input_parsers: Vec<ExternalInputParser>,
@@ -217,6 +196,7 @@ pub fn default_config(network: Network) -> Config {
             multiplicity: 1,
         },
         stable_balance_config: None,
+        max_concurrent_claims: 4,
     }
 }
 

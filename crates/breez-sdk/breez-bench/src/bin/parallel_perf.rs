@@ -9,7 +9,8 @@ use std::time::{Duration, Instant};
 use anyhow::{Result, bail};
 use clap::Parser;
 use rand::seq::SliceRandom;
-use rand::{Rng, SeedableRng};
+use rand::{Rng, RngCore, SeedableRng};
+use tempdir::TempDir;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
@@ -55,30 +56,30 @@ struct Args {
     #[arg(long)]
     no_auto_optimize: bool,
 
-    /// Run leaf optimization before test starts with specified multiplicity (0-5)
+    /// Run leaf optimization before test starts with specified multiplicity
     #[arg(long, value_name = "MULTIPLICITY")]
     pre_optimize: Option<u8>,
 }
 
 /// Type of payment to execute
 #[derive(Debug, Clone)]
-enum PaymentType_ {
+enum PaymentType {
     Transfer { address: String, amount: u64 },
     Lightning { invoice: String, amount: u64 },
 }
 
-impl PaymentType_ {
+impl PaymentType {
     fn name(&self) -> &'static str {
         match self {
-            PaymentType_::Transfer { .. } => "Transfer",
-            PaymentType_::Lightning { .. } => "Lightning",
+            PaymentType::Transfer { .. } => "Transfer",
+            PaymentType::Lightning { .. } => "Lightning",
         }
     }
 
     fn amount(&self) -> u64 {
         match self {
-            PaymentType_::Transfer { amount, .. } => *amount,
-            PaymentType_::Lightning { amount, .. } => *amount,
+            PaymentType::Transfer { amount, .. } => *amount,
+            PaymentType::Lightning { amount, .. } => *amount,
         }
     }
 }
@@ -87,14 +88,14 @@ impl PaymentType_ {
 #[derive(Debug, Clone)]
 struct PaymentTask {
     id: usize,
-    payment_type: PaymentType_,
+    payment_type: PaymentType,
 }
 
 /// Result of a single payment execution
 #[derive(Debug)]
 struct PaymentResult {
     id: usize,
-    payment_type: PaymentType_,
+    payment_type: PaymentType,
     duration: Duration,
     success: bool,
     error: Option<String>,
@@ -235,7 +236,7 @@ async fn main() -> Result<()> {
         let amount = rng.gen_range(args.min_amount..=args.max_amount);
         payments.push(PaymentTask {
             id,
-            payment_type: PaymentType_::Transfer {
+            payment_type: PaymentType::Transfer {
                 address: receiver_address.clone(),
                 amount,
             },
@@ -247,7 +248,7 @@ async fn main() -> Result<()> {
     for (invoice, amount) in lightning_invoices {
         payments.push(PaymentTask {
             id,
-            payment_type: PaymentType_::Lightning { invoice, amount },
+            payment_type: PaymentType::Lightning { invoice, amount },
         });
         id += 1;
     }
@@ -371,9 +372,9 @@ async fn execute_payments(
 }
 
 /// Execute a single payment
-async fn execute_single_payment(sender: &BreezSdk, payment_type: &PaymentType_) -> Result<()> {
+async fn execute_single_payment(sender: &BreezSdk, payment_type: &PaymentType) -> Result<()> {
     match payment_type {
-        PaymentType_::Transfer { address, amount } => {
+        PaymentType::Transfer { address, amount } => {
             let prepare = sender
                 .prepare_send_payment(PrepareSendPaymentRequest {
                     payment_request: address.clone(),
@@ -394,7 +395,7 @@ async fn execute_single_payment(sender: &BreezSdk, payment_type: &PaymentType_) 
 
             Ok(())
         }
-        PaymentType_::Lightning { invoice, .. } => {
+        PaymentType::Lightning { invoice, .. } => {
             let prepare = sender
                 .prepare_send_payment(PrepareSendPaymentRequest {
                     payment_request: invoice.clone(),
@@ -481,11 +482,11 @@ fn print_summary(
         // Breakdown by payment type
         let transfer_results: Vec<_> = successful
             .iter()
-            .filter(|r| matches!(r.payment_type, PaymentType_::Transfer { .. }))
+            .filter(|r| matches!(r.payment_type, PaymentType::Transfer { .. }))
             .collect();
         let lightning_results: Vec<_> = successful
             .iter()
-            .filter(|r| matches!(r.payment_type, PaymentType_::Lightning { .. }))
+            .filter(|r| matches!(r.payment_type, PaymentType::Lightning { .. }))
             .collect();
 
         if !transfer_results.is_empty() {
@@ -553,9 +554,6 @@ async fn initialize_sdk_pair(
     no_auto_optimize: bool,
     pre_optimize: Option<u8>,
 ) -> Result<(BenchSdkInstance, BenchSdkInstance)> {
-    use rand::RngCore;
-    use tempdir::TempDir;
-
     // Create sender SDK
     let sender_dir = TempDir::new("parallel-perf-sender")?;
     let sender_path = sender_dir.path().to_string_lossy().to_string();

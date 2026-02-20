@@ -7,7 +7,9 @@ The SDK implements a configurable Spark leaf optimization process. It supports t
 
 ## Configuring the optimization policy
 
-The optimization behavior is controlled by the **multiplicity** setting, an integer value in the range 0-5. Setting it to 0 fully optimizes for unilateral exit efficiency, while values greater than 0 also optimize for payment speed. Higher values prioritize payment speed more aggressively, resulting in higher unilateral exit costs but faster payments, especially for bursts of transactions.
+The optimization behavior is controlled by the **multiplicity** setting. Setting it to 0 fully optimizes for unilateral exit efficiency, while values greater than 0 also optimize for payment speed. Higher values prioritize payment speed more aggressively, resulting in higher unilateral exit costs but faster payments, especially for bursts of transactions.
+
+For most end-user wallets, a multiplicity of 1-5 is recommended. Values above 5 are intended for high-throughput server environments that require maximum transactions per second (TPS) and should not be used in end-user wallet applications due to the significantly higher unilateral exit costs.
 
 See [Configuration](./config.md#optimization-configuration) to learn how to set the multiplicity.
 

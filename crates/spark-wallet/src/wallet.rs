@@ -8,6 +8,7 @@ use bitcoin::{
     secp256k1::{PublicKey, ecdsa::Signature},
 };
 
+use futures::stream::{self, StreamExt};
 use spark::{
     address::{
         SatsPayment, SparkAddress, SparkAddressPaymentType, SparkInvoiceFields, TokensPayment,
@@ -46,7 +47,7 @@ use spark::{
 };
 use tokio::sync::{broadcast, watch};
 use tokio_with_wasm::alias as tokio;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
 use web_time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
@@ -356,6 +357,7 @@ impl SparkWallet {
                 config.leaf_auto_optimize_enabled,
                 Arc::clone(&token_service),
                 config.token_outputs_optimization_options.clone(),
+                config.max_concurrent_claims,
             ));
             background_processor
                 .run_background_tasks(cancellation_token.clone())
@@ -812,6 +814,7 @@ impl SparkWallet {
             &self.tree_service,
             &self.htlc_service,
             &self.ssp_client,
+            self.config.max_concurrent_claims,
         )
         .await?;
 
@@ -1697,6 +1700,7 @@ async fn claim_pending_transfers(
     tree_service: &Arc<dyn TreeService>,
     htlc_service: &Arc<HtlcService>,
     ssp_client: &Arc<ServiceProvider>,
+    max_concurrent_claims: u32,
 ) -> Result<Vec<WalletTransfer>, SparkWalletError> {
     debug!("Claiming all pending transfers");
     let transfers = transfer_service
@@ -1709,28 +1713,55 @@ async fn claim_pending_transfers(
     }
 
     debug!(
-        "Retrieved {} pending transfers, starting claims",
-        transfers.len()
+        "Retrieved {} pending transfers, claiming with max concurrency {}",
+        transfers.len(),
+        max_concurrent_claims
     );
 
-    for (i, transfer) in transfers.items.iter().enumerate() {
-        debug!("Claiming transfer: {}/{}", i + 1, transfers.len());
-        claim_transfer(transfer, transfer_service, tree_service).await?;
-        debug!(
-            "Successfully claimed transfer: {}/{}",
-            i + 1,
-            transfers.len()
-        );
+    // Concurrent claiming with best-effort error handling
+    let claim_results: Vec<_> = stream::iter(transfers.items.iter().cloned())
+        .enumerate()
+        .map(|(i, transfer)| {
+            let transfer_service = Arc::clone(transfer_service);
+            let tree_service = Arc::clone(tree_service);
+            async move {
+                debug!("Claiming transfer {}: {}", i + 1, transfer.id);
+                let result = claim_transfer(&transfer, &transfer_service, &tree_service).await;
+                match &result {
+                    Ok(_) => debug!("Successfully claimed transfer: {}", transfer.id),
+                    Err(e) => warn!("Failed to claim transfer {}: {:?}", transfer.id, e),
+                }
+                (transfer, result)
+            }
+        })
+        .buffer_unordered(max_concurrent_claims as usize)
+        .collect()
+        .await;
+
+    // Collect successful claims, log failures (best-effort)
+    let mut successful_items = Vec::new();
+
+    for (transfer, result) in claim_results {
+        if result.is_ok() {
+            let mut completed = transfer;
+            completed.status = TransferStatus::Completed;
+            successful_items.push(completed);
+        }
+        // Failures already logged above, continue with others
     }
 
-    let mut transfers = transfers;
-    for transfer in transfers.items.iter_mut() {
-        transfer.status = TransferStatus::Completed;
-    }
+    debug!(
+        "Claimed {} transfers, creating wallet transfers",
+        successful_items.len()
+    );
 
-    debug!("Claimed all transfers, creating wallet transfers");
+    let successful_transfers = PagingResult {
+        items: successful_items,
+        next: transfers.next.clone(),
+    };
+
     Ok(create_transfers(
-        transfers,
+        successful_transfers,
         ssp_client,
         htlc_service,
         our_pubkey,
@@ -1882,6 +1913,7 @@ struct BackgroundProcessor {
     auto_optimize_enabled: bool,
     token_service: Arc<TokenService>,
     token_outputs_optimization_options: TokenOutputsOptimizationOptions,
+    max_concurrent_claims: u32,
 }
 
 impl BackgroundProcessor {
@@ -1899,6 +1931,7 @@ impl BackgroundProcessor {
         auto_optimize_enabled: bool,
         token_service: Arc<TokenService>,
         token_outputs_optimization_options: TokenOutputsOptimizationOptions,
+        max_concurrent_claims: u32,
     ) -> Self {
         Self {
             operator_pool,
@@ -1913,6 +1946,7 @@ impl BackgroundProcessor {
             auto_optimize_enabled,
             token_service,
             token_outputs_optimization_options,
+            max_concurrent_claims,
         }
     }
 
@@ -2106,6 +2140,7 @@ impl BackgroundProcessor {
             &self.tree_service,
             &self.htlc_service,
             &self.ssp_client,
+            self.max_concurrent_claims,
         )
         .await
         {

@@ -90,6 +90,7 @@ impl TestFixtures {
                 auto_optimize_interval: None,
             },
             self_payment_allowed: false,
+            max_concurrent_claims: 1,
         })
     }
 }

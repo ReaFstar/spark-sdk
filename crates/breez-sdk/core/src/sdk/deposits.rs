@@ -7,7 +7,7 @@ use crate::{
     persist::UpdateDepositPayload, utils::utxo_fetcher::CachedUtxoFetcher,
 };
 
-use super::{BreezSdk, SyncRequest, SyncType};
+use super::{BreezSdk, SyncType};
 
 #[cfg_attr(feature = "uniffi", uniffi::export(async_runtime = "tokio"))]
 #[allow(clippy::needless_pass_by_value)]
@@ -30,12 +30,9 @@ impl BreezSdk {
                 self.storage
                     .delete_deposit(detailed_utxo.txid.to_string(), detailed_utxo.vout)
                     .await?;
-                if let Err(e) = self
-                    .sync_trigger
-                    .send(SyncRequest::no_reply(SyncType::WalletState))
-                {
-                    error!("Failed to execute sync after deposit claim: {e:?}");
-                }
+                self.sync_coordinator
+                    .trigger_sync_no_wait(SyncType::WalletState, true)
+                    .await;
                 Ok(ClaimDepositResponse {
                     payment: transfer.try_into()?,
                 })
