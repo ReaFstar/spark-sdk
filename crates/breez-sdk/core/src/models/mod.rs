@@ -531,6 +531,7 @@ impl FromStr for Network {
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Config {
     pub api_key: Option<String>,
     pub network: Network,
@@ -582,6 +583,9 @@ pub struct Config {
     ///
     /// Default is 4. Increase for server environments with high incoming payment volume.
     pub max_concurrent_claims: u32,
+    /// When true, the LNURL server won't track invoice payments for this user (LUD-21 disabled).
+    /// This can be useful for privacy-conscious users who don't need invoice payment notifications.
+    pub no_invoice_paid_support: bool,
 }
 
 #[derive(Debug, Clone)]
