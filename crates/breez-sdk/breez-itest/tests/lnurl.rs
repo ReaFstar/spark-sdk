@@ -9,7 +9,7 @@ use platform_utils::{DefaultHttpClient, HttpClient};
 use rand::RngCore;
 use rstest::*;
 use tempdir::TempDir;
-use tracing::{debug, info};
+use tracing::{Instrument, debug, info};
 use warp::Filter;
 
 // ---------------------
@@ -27,57 +27,65 @@ async fn lnurl_fixture() -> LnurlFixture {
 /// Fixture: Alice SDK for LNURL testing (sender)
 #[fixture]
 async fn alice_sdk() -> Result<SdkInstance> {
-    let temp_dir = TempDir::new("breez-sdk-alice-lnurl")?;
+    async {
+        let temp_dir = TempDir::new("breez-sdk-alice-lnurl")?;
 
-    // Generate random seed for Alice
-    let mut seed = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut seed);
+        // Generate random seed for Alice
+        let mut seed = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut seed);
 
-    let mut config = default_config(Network::Regtest);
-    config.api_key = None; // Regtest: no API key needed
-    config.prefer_spark_over_lightning = true;
-    config.sync_interval_secs = 1; // Faster sync for testing
-    config.real_time_sync_server_url = None;
-    config.lnurl_domain = None; // Alice doesn't need LNURL service
+        let mut config = default_config(Network::Regtest);
+        config.api_key = None; // Regtest: no API key needed
+        config.prefer_spark_over_lightning = true;
+        config.sync_interval_secs = 1; // Faster sync for testing
+        config.real_time_sync_server_url = None;
+        config.lnurl_domain = None; // Alice doesn't need LNURL service
 
-    build_sdk_with_custom_config(
-        temp_dir.path().to_string_lossy().to_string(),
-        seed,
-        config,
-        Some(temp_dir),
-        false,
-    )
+        build_sdk_with_custom_config(
+            temp_dir.path().to_string_lossy().to_string(),
+            seed,
+            config,
+            Some(temp_dir),
+            false,
+        )
+        .await
+    }
+    .instrument(tracing::info_span!(target: "breez_sdk_spark", "alice"))
     .await
 }
 
 /// Fixture: Bob SDK with Lnurl configured (receiver)
 #[fixture]
 async fn bob_sdk(#[future] lnurl_fixture: LnurlFixture) -> Result<SdkInstance> {
-    let lnurl = Arc::new(lnurl_fixture.await);
-    let lnurl_domain = lnurl.http_url().to_string();
+    async {
+        let lnurl = Arc::new(lnurl_fixture.await);
+        let lnurl_domain = lnurl.http_url().to_string();
 
-    let temp_dir = TempDir::new("breez-sdk-bob-lnurl")?;
+        let temp_dir = TempDir::new("breez-sdk-bob-lnurl")?;
 
-    // Generate random seed for Bob
-    let mut seed = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut seed);
+        // Generate random seed for Bob
+        let mut seed = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut seed);
 
-    let mut config = default_config(Network::Regtest);
-    config.api_key = None; // Regtest: no API key needed
-    config.lnurl_domain = Some(lnurl_domain.to_string());
-    config.sync_interval_secs = 1; // Faster sync for testing
-    config.real_time_sync_server_url = None;
+        let mut config = default_config(Network::Regtest);
+        config.api_key = None; // Regtest: no API key needed
+        config.lnurl_domain = Some(lnurl_domain.to_string());
+        config.sync_interval_secs = 1; // Faster sync for testing
+        config.real_time_sync_server_url = None;
 
-    let mut sdk_instance = build_sdk_with_custom_config(
-        temp_dir.path().to_string_lossy().to_string(),
-        seed,
-        config,
-        Some(temp_dir),
-        false,
-    )
-    .await?;
-    sdk_instance.lnurl_fixture = Some(Arc::clone(&lnurl));
-    Ok(sdk_instance)
+        let mut sdk_instance = build_sdk_with_custom_config(
+            temp_dir.path().to_string_lossy().to_string(),
+            seed,
+            config,
+            Some(temp_dir),
+            false,
+        )
+        .await?;
+        sdk_instance.lnurl_fixture = Some(Arc::clone(&lnurl));
+        Ok(sdk_instance)
+    }
+    .instrument(tracing::info_span!(target: "breez_sdk_spark", "bob"))
+    .await
 }
 
 // ---------------------
@@ -439,24 +447,28 @@ async fn test_06_client_side_zap_receipt(
     let lnurl = Arc::new(lnurl_fixture.await);
     let lnurl_domain = lnurl.http_url().to_string();
 
-    let temp_dir = TempDir::new("breez-sdk-bob-zap")?;
-    let mut seed = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut seed);
+    let mut bob = async {
+        let temp_dir = TempDir::new("breez-sdk-bob-zap")?;
+        let mut seed = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut seed);
 
-    let mut config = default_config(Network::Regtest);
-    config.api_key = None;
-    config.lnurl_domain = Some(lnurl_domain.clone());
-    config.sync_interval_secs = 1;
-    config.real_time_sync_server_url = None;
-    config.private_enabled_default = true;
+        let mut config = default_config(Network::Regtest);
+        config.api_key = None;
+        config.lnurl_domain = Some(lnurl_domain.clone());
+        config.sync_interval_secs = 1;
+        config.real_time_sync_server_url = None;
+        config.private_enabled_default = true;
 
-    let mut bob = build_sdk_with_custom_config(
-        temp_dir.path().to_string_lossy().to_string(),
-        seed,
-        config,
-        Some(temp_dir),
-        false,
-    )
+        build_sdk_with_custom_config(
+            temp_dir.path().to_string_lossy().to_string(),
+            seed,
+            config,
+            Some(temp_dir),
+            false,
+        )
+        .await
+    }
+    .instrument(tracing::info_span!(target: "breez_sdk_spark", "bob"))
     .await?;
     bob.lnurl_fixture = Some(Arc::clone(&lnurl));
 
@@ -466,37 +478,45 @@ async fn test_06_client_side_zap_receipt(
     let username = "bobzap";
     let description = "Bob's zap test Lightning address";
 
-    let register_response = bob
-        .sdk
-        .register_lightning_address(RegisterLightningAddressRequest {
-            username: username.to_string(),
-            description: Some(description.to_string()),
-        })
-        .await?;
+    let bob_lightning_address = async {
+        let register_response = bob
+            .sdk
+            .register_lightning_address(RegisterLightningAddressRequest {
+                username: username.to_string(),
+                description: Some(description.to_string()),
+            })
+            .await?;
 
-    let bob_lightning_address = register_response.lightning_address.clone();
-    info!(
-        "Bob registered Lightning address: {}",
-        bob_lightning_address
-    );
+        let addr = register_response.lightning_address.clone();
+        info!("Registered Lightning address: {}", addr);
+        Ok::<_, anyhow::Error>(addr)
+    }
+    .instrument(bob.span.clone())
+    .await?;
 
-    // Fund Alice with sats for testing
+    // Fund Alice with sats for testing (receive_and_fund self-instruments with alice span)
     receive_and_fund(&mut alice, 50_000, false).await?;
-    info!("Alice funded with sats");
 
     // Wait for sync to complete
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     // Alice parses Bob's Lightning address
-    let details = match alice.sdk.parse(&bob_lightning_address).await? {
-        InputType::LightningAddress(address) => address,
-        _ => anyhow::bail!("Expected Lightning address"),
-    };
+    let details = async {
+        let details = match alice.sdk.parse(&bob_lightning_address).await? {
+            InputType::LightningAddress(address) => address,
+            _ => anyhow::bail!("Expected Lightning address"),
+        };
 
-    assert_eq!(details.pay_request.allows_nostr, Some(true));
-    assert_eq!(details.pay_request.comment_allowed, 255u16);
-    assert!(details.pay_request.nostr_pubkey.is_some());
-    let bob_nostr_pubkey = details.pay_request.nostr_pubkey.unwrap();
+        assert_eq!(details.pay_request.allows_nostr, Some(true));
+        assert_eq!(details.pay_request.comment_allowed, 255u16);
+        assert!(details.pay_request.nostr_pubkey.is_some());
+        info!("Parsed Lightning address successfully");
+        Ok::<_, anyhow::Error>(details)
+    }
+    .instrument(alice.span.clone())
+    .await?;
+
+    let bob_nostr_pubkey = details.pay_request.nostr_pubkey.clone().unwrap();
 
     // Start a minimal nostr relay so the LNURL server can publish zap receipts
     let relay_port = start_nostr_relay().await?;
@@ -568,35 +588,50 @@ async fn test_06_client_side_zap_receipt(
     info!("Got invoice with zap request: {invoice}");
 
     // Step 2: Alice pays the invoice using the standard send_payment flow
-    let prepare_response = alice
-        .sdk
-        .prepare_send_payment(PrepareSendPaymentRequest {
-            payment_request: invoice.clone(),
-            amount: None,
-            token_identifier: None,
-            conversion_options: None,
-            fee_policy: None,
-        })
-        .await?;
+    async {
+        let prepare_response = alice
+            .sdk
+            .prepare_send_payment(PrepareSendPaymentRequest {
+                payment_request: invoice.clone(),
+                amount: None,
+                token_identifier: None,
+                conversion_options: None,
+                fee_policy: None,
+            })
+            .await?;
 
-    let _pay_response = alice
-        .sdk
-        .send_payment(SendPaymentRequest {
-            prepare_response,
-            options: None,
-            idempotency_key: None,
-        })
-        .await?;
+        alice
+            .sdk
+            .send_payment(SendPaymentRequest {
+                prepare_response,
+                options: None,
+                idempotency_key: None,
+            })
+            .await?;
 
-    info!("Alice initiated payment to Bob");
+        info!("Initiated payment to Bob");
+        Ok::<_, anyhow::Error>(())
+    }
+    .instrument(alice.span.clone())
+    .await?;
 
     // Wait for payment to complete on both sides
-    wait_for_payment_succeeded_event(&mut alice.events, PaymentType::Send, 30).await?;
-    info!("Payment completed on Alice's side");
+    async {
+        wait_for_payment_succeeded_event(&mut alice.events, PaymentType::Send, 30).await?;
+        info!("Payment completed");
+        Ok::<_, anyhow::Error>(())
+    }
+    .instrument(alice.span.clone())
+    .await?;
 
-    let bob_payment_from_event =
-        wait_for_payment_succeeded_event(&mut bob.events, PaymentType::Receive, 30).await?;
-    info!("Payment completed on Bob's side");
+    let bob_payment_from_event = async {
+        let payment =
+            wait_for_payment_succeeded_event(&mut bob.events, PaymentType::Receive, 30).await?;
+        info!("Payment completed");
+        Ok::<_, anyhow::Error>(payment)
+    }
+    .instrument(bob.span.clone())
+    .await?;
 
     // Verify bob_payment_from_event has all metadata
     let Some(PaymentDetails::Lightning {
@@ -634,34 +669,39 @@ async fn test_06_client_side_zap_receipt(
     // Poll until the zap receipt is present in the payment
     let payment_id = bob_payment_from_event.id.clone();
     let bob_sdk = bob.sdk.clone();
+    let bob_span = bob.span.clone();
 
     let payment_lnurl_metadata = wait_for(
-        || async {
-            debug!("Checking for zap receipt in Bob's payment {}", payment_id);
-            let payment = bob_sdk
-                .get_payment(GetPaymentRequest {
-                    payment_id: payment_id.clone(),
-                })
-                .await?
-                .payment;
+        || {
+            let span = bob_span.clone();
+            async {
+                debug!("Checking for zap receipt in payment {}", payment_id);
+                let payment = bob_sdk
+                    .get_payment(GetPaymentRequest {
+                        payment_id: payment_id.clone(),
+                    })
+                    .await?
+                    .payment;
 
-            let Some(PaymentDetails::Lightning {
-                lnurl_receive_metadata,
-                ..
-            }) = payment.details
-            else {
-                anyhow::bail!("Expected Lightning payment");
-            };
+                let Some(PaymentDetails::Lightning {
+                    lnurl_receive_metadata,
+                    ..
+                }) = payment.details
+                else {
+                    anyhow::bail!("Expected Lightning payment");
+                };
 
-            let Some(metadata) = lnurl_receive_metadata else {
-                anyhow::bail!("Expected LNURL receive metadata");
-            };
+                let Some(metadata) = lnurl_receive_metadata else {
+                    anyhow::bail!("Expected LNURL receive metadata");
+                };
 
-            if metadata.nostr_zap_receipt.is_none() {
-                anyhow::bail!("Zap receipt not yet created");
+                if metadata.nostr_zap_receipt.is_none() {
+                    anyhow::bail!("Zap receipt not yet created");
+                }
+
+                Ok(metadata)
             }
-
-            Ok(metadata)
+            .instrument(span)
         },
         20,
     )
