@@ -649,6 +649,18 @@ pub struct StableBalanceConfig {
 }
 
 impl Config {
+    /// Validates the configuration.
+    ///
+    /// Returns an error if any configuration values are invalid.
+    pub fn validate(&self) -> Result<(), SdkError> {
+        if self.max_concurrent_claims == 0 {
+            return Err(SdkError::InvalidInput(
+                "max_concurrent_claims must be greater than 0".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
     pub(crate) fn get_all_external_input_parsers(&self) -> Vec<ExternalInputParser> {
         let mut external_input_parsers = Vec::new();
         if self.use_default_external_input_parsers {

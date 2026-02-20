@@ -226,6 +226,9 @@ impl SdkBuilder {
     /// Builds the `BreezSdk` instance with the configured components.
     #[allow(clippy::too_many_lines)]
     pub async fn build(self) -> Result<BreezSdk, SdkError> {
+        // Validate configuration
+        self.config.validate()?;
+
         // Create the base signer based on the signer source
         let (signer, account_number) = match self.signer_source {
             SignerSource::Seed {
