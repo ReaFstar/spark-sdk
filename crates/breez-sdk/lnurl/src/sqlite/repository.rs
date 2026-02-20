@@ -3,7 +3,11 @@ use sqlx::{Row, SqlitePool};
 
 use crate::repository::{Invoice, LnurlSenderComment, NewlyPaid};
 use crate::zap::Zap;
-use crate::{repository::LnurlRepositoryError, time::now, user::User};
+use crate::{
+    repository::LnurlRepositoryError,
+    time::{now, now_millis},
+    user::User,
+};
 
 #[derive(Clone)]
 pub struct LnurlRepository {
@@ -367,7 +371,7 @@ impl crate::repository::LnurlRepository for LnurlRepository {
     }
 
     async fn get_pending_newly_paid(&self) -> Result<Vec<NewlyPaid>, LnurlRepositoryError> {
-        let now = now();
+        let now = now_millis();
         let rows = sqlx::query(
             "SELECT payment_hash, created_at, retry_count, next_retry_at
              FROM newly_paid
