@@ -12,7 +12,7 @@ use tokio::{
     sync::{broadcast, watch},
 };
 use tokio_with_wasm::alias as tokio;
-use tracing::{debug, error, info, warn};
+use tracing::{Instrument, debug, error, info, warn};
 use web_time::Duration;
 
 use crate::{
@@ -97,25 +97,31 @@ impl FlashnetTokenConverter {
         let storage = Arc::clone(&self.storage);
         let flashnet_client = Arc::clone(&self.flashnet_client);
         let mut trigger_receiver = refund_trigger.subscribe();
+        let span = tracing::Span::current();
 
-        tokio::spawn(async move {
-            loop {
-                if let Err(e) = Self::refund_failed_conversions(&storage, &flashnet_client).await {
-                    error!("Failed to refund failed conversions: {e:?}");
-                }
+        tokio::spawn(
+            async move {
+                loop {
+                    if let Err(e) =
+                        Self::refund_failed_conversions(&storage, &flashnet_client).await
+                    {
+                        error!("Failed to refund failed conversions: {e:?}");
+                    }
 
-                select! {
-                    _ = shutdown_receiver.changed() => {
-                        info!("Conversion refunder shutdown signal received");
-                        return;
+                    select! {
+                        _ = shutdown_receiver.changed() => {
+                            info!("Conversion refunder shutdown signal received");
+                            return;
+                        }
+                        _ = trigger_receiver.recv() => {
+                            debug!("Conversion refunder triggered");
+                        }
+                        () = tokio::time::sleep(Duration::from_secs(150)) => {}
                     }
-                    _ = trigger_receiver.recv() => {
-                        debug!("Conversion refunder triggered");
-                    }
-                    () = tokio::time::sleep(Duration::from_secs(150)) => {}
                 }
             }
-        });
+            .instrument(span),
+        );
     }
 
     /// Process all failed conversions needing refunds.

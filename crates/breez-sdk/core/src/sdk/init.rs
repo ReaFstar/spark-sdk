@@ -2,7 +2,7 @@ use flashnet::{FlashnetConfig, IntegratorConfig};
 use std::sync::Arc;
 use tokio::sync::{OnceCell, watch};
 use tokio_with_wasm::alias as tokio;
-use tracing::{error, info};
+use tracing::{Instrument, error, info};
 
 use crate::{
     Network,
@@ -103,16 +103,21 @@ impl BreezSdk {
 
     fn spawn_spark_private_mode_initialization(&self) {
         let sdk = self.clone();
-        tokio::spawn(async move {
-            if let Err(e) = sdk.ensure_spark_private_mode_initialized().await {
-                error!("Failed to initialize spark private mode: {e:?}");
+        let span = tracing::Span::current();
+        tokio::spawn(
+            async move {
+                if let Err(e) = sdk.ensure_spark_private_mode_initialized().await {
+                    error!("Failed to initialize spark private mode: {e:?}");
+                }
             }
-        });
+            .instrument(span),
+        );
     }
 
     /// Refreshes the user's lightning address on the server on startup.
     fn try_recover_lightning_address(&self) {
         let sdk = self.clone();
+        let span = tracing::Span::current();
         tokio::spawn(async move {
             if sdk.config.lnurl_domain.is_none() {
                 return;
@@ -126,7 +131,7 @@ impl BreezSdk {
                 ),
                 Err(e) => error!("Failed to recover lightning address on startup: {e:?}"),
             }
-        });
+        }.instrument(span));
     }
 
     pub(super) async fn ensure_spark_private_mode_initialized(&self) -> Result<(), SdkError> {

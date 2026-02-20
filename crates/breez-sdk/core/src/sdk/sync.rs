@@ -2,7 +2,7 @@ use spark_wallet::WalletEvent;
 use std::sync::Arc;
 use tokio::sync::watch;
 use tokio_with_wasm::alias as tokio;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{Instrument, debug, error, info, trace, warn};
 use web_time::{Duration, Instant, SystemTime};
 
 use crate::{
@@ -34,6 +34,7 @@ impl BreezSdk {
         let mut last_sync_time = SystemTime::now();
 
         let sync_interval = u64::from(self.config.sync_interval_secs);
+        let span = tracing::Span::current();
         tokio::spawn(async move {
             let balance_watcher =
                 BalanceWatcher::new(sdk.spark_wallet.clone(), sdk.storage.clone());
@@ -96,7 +97,7 @@ impl BreezSdk {
                     }
                 }
             }
-        });
+        }.instrument(span));
     }
 
     pub(super) async fn handle_wallet_event(&self, event: WalletEvent) {

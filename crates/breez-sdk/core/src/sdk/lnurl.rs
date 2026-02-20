@@ -1,6 +1,6 @@
 use breez_sdk_common::lnurl::{self, error::LnurlError, pay::validate_lnurl_pay};
 use tokio_with_wasm::alias as tokio;
-use tracing::{debug, error, info};
+use tracing::{Instrument, debug, error, info};
 
 use crate::{
     FeePolicy, InputType, ListPaymentsRequest, LnurlAuthRequestDetails, LnurlCallbackStatus,
@@ -501,26 +501,30 @@ impl BreezSdk {
         let sdk = self.clone();
         let mut shutdown_receiver = sdk.shutdown_sender.subscribe();
         let mut trigger_receiver = sdk.lnurl_preimage_trigger.clone().subscribe();
+        let span = tracing::Span::current();
 
-        tokio::spawn(async move {
-            if let Err(e) = Self::process_pending_lnurl_preimages(&sdk).await {
-                error!("Failed to process pending LNURL preimages on startup: {e:?}");
-            }
+        tokio::spawn(
+            async move {
+                if let Err(e) = Self::process_pending_lnurl_preimages(&sdk).await {
+                    error!("Failed to process pending LNURL preimages on startup: {e:?}");
+                }
 
-            loop {
-                tokio::select! {
-                    _ = shutdown_receiver.changed() => {
-                        info!("LNURL preimage publisher shutdown signal received");
-                        return;
-                    }
-                    _ = trigger_receiver.recv() => {
-                        if let Err(e) = Self::process_pending_lnurl_preimages(&sdk).await {
-                            error!("Failed to process pending LNURL preimages: {e:?}");
+                loop {
+                    tokio::select! {
+                        _ = shutdown_receiver.changed() => {
+                            info!("LNURL preimage publisher shutdown signal received");
+                            return;
+                        }
+                        _ = trigger_receiver.recv() => {
+                            if let Err(e) = Self::process_pending_lnurl_preimages(&sdk).await {
+                                error!("Failed to process pending LNURL preimages: {e:?}");
+                            }
                         }
                     }
                 }
             }
-        });
+            .instrument(span),
+        );
     }
 
     async fn process_pending_lnurl_preimages(&self) -> Result<(), SdkError> {

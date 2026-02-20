@@ -11,7 +11,7 @@ use breez_sdk_common::sync::{
     SchemaVersion, SyncService,
 };
 use serde_json::Value;
-use tracing::{debug, error, warn};
+use tracing::{Instrument, debug, error, warn};
 
 use crate::{
     DepositInfo, EventEmitter, ListPaymentsRequest, Payment, PaymentDetails, PaymentMetadata,
@@ -108,11 +108,15 @@ impl SyncedStorage {
 
     pub fn initial_setup(self: &Arc<Self>) {
         let clone = Arc::clone(self);
-        tokio::spawn(async move {
-            if let Err(e) = clone.feed_existing_payment_metadata().await {
-                error!("Failed to feed existing payment metadata for sync: {}", e);
+        let span = tracing::Span::current();
+        tokio::spawn(
+            async move {
+                if let Err(e) = clone.feed_existing_payment_metadata().await {
+                    error!("Failed to feed existing payment metadata for sync: {}", e);
+                }
             }
-        });
+            .instrument(span),
+        );
     }
 
     /// Feed existing payment metadata into sync storage. This is really only needed the first time sync is set up,

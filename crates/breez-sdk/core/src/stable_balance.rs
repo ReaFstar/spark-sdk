@@ -3,7 +3,7 @@ use std::sync::Arc;
 use spark_wallet::SparkWallet;
 use tokio::sync::{Notify, watch};
 use tokio_with_wasm::alias as tokio;
-use tracing::{debug, info, warn};
+use tracing::{Instrument, debug, info, warn};
 
 use breez_sdk_common::sync::SigningClient;
 
@@ -97,23 +97,27 @@ impl StableBalance {
     /// 2. Executes auto-conversion if conditions are met
     fn spawn_auto_convert_task(&self, mut shutdown_receiver: watch::Receiver<()>) {
         let stable_balance = self.clone();
+        let span = tracing::Span::current();
 
-        tokio::spawn(async move {
-            loop {
-                // Wait for a trigger or shutdown
-                tokio::select! {
-                    _ = shutdown_receiver.changed() => {
-                        info!("Auto-conversion task shutdown signal received");
-                        return;
+        tokio::spawn(
+            async move {
+                loop {
+                    // Wait for a trigger or shutdown
+                    tokio::select! {
+                        _ = shutdown_receiver.changed() => {
+                            info!("Auto-conversion task shutdown signal received");
+                            return;
+                        }
+                        () = stable_balance.auto_convert_trigger.notified() => {}
                     }
-                    () = stable_balance.auto_convert_trigger.notified() => {}
-                }
 
-                if let Err(e) = stable_balance.auto_convert().await {
-                    warn!("Auto-conversion failed: {e:?}");
+                    if let Err(e) = stable_balance.auto_convert().await {
+                        warn!("Auto-conversion failed: {e:?}");
+                    }
                 }
             }
-        });
+            .instrument(span),
+        );
     }
 
     /// Executes auto-conversion if the balance exceeds the threshold.
