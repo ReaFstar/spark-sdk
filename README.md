@@ -1,19 +1,18 @@
-# Breez SDK - Nodeless *(Spark Implementation)*
+# Breez SDK - Spark
 
 ## **Overview**
 
-The Breez SDK provides developers with an end-to-end solution for integrating self-custodial bitcoin into their apps and services.
+The Breez SDK provides developers with an end-to-end solution for integrating instant, self-custodial bitcoin into their apps and services.
 It eliminates the need for third parties, simplifies the complexities of Bitcoin and Lightning, and enables seamless onboarding for billions of users to the future of value transfer.
 
 **The Breez SDK is free for developers.**
 
+## **What is the Breez SDK - Spark?**
 
-## **What is the Breez SDK - Nodeless *(Spark Implementation)*?**
+It’s a nodeless integration that offers a self-custodial, end-to-end solution for integrating bitcoin, utilizing the Bitcoin-native Layer 2 Lightning & Spark, with on-chain interoperability. Using the Breez SDK, you’ll be able to:
 
-It’s a nodeless integration that offers a self-custodial, end-to-end solution for integrating bitcoin, utilizing the Bitcoin-native Layer 2 Lightning & Spark with on-chain interoperability. Using the SDK you'll able to:
-
-- Send payments via various protocols such as: Lightning address, LNURL-Pay, Bolt11, BTC address, Spark address
-- Receive payments via various protocols such as: Lightning address, LNURL-Pay, Bolt11, BTC address
+- **Send payments** via various protocols such as: Lightning address, LNURL-Pay, Bolt11, BTC address, Spark address
+- **Receive payments** via various protocols such as: Lightning address, LNURL-Pay, Bolt11, BTC address
 
 **Key Features**
 - [x] Send and receive Lightning payments
@@ -44,7 +43,7 @@ API documentation is [here](https://breez.github.io/spark-sdk/breez_sdk_spark/in
 
 ## **Command Line**
 
-The [Breez SDK - Nodeless *(Spark Implementation)* cli](https://github.com/breez/spark-sdk/tree/main/crates/breez-sdk/cli) is a command line client that allows you to interact with and test the functionality of the SDK.
+The [Breez SDK - Spark cli](https://github.com/breez/spark-sdk/tree/main/crates/breez-sdk/cli) is a command line client that allows you to interact with and test the functionality of the SDK.
 
 ## Demo
 
@@ -60,7 +59,7 @@ Looking for a quick way to try the SDK in the browser or as PWA? Check out our d
 Have a question for the team? Join our [Telegram channel](https://t.me/breezsdk) or email us at [contact@breez.technology](mailto:contact@breez.technology)
  
 
-## How Does Nodeless *(Spark Implementation)* Work?
+## How does the Breez SDK - Spark work?
 
 The Breez SDK uses Spark, a Bitcoin-native Layer 2 built on a shared signing protocol, to enable real-time, low-fee, self-custodial payments.
 
