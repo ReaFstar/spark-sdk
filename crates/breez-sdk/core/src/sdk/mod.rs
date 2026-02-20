@@ -86,7 +86,7 @@ pub struct BreezSdk {
     pub(crate) shutdown_sender: watch::Sender<()>,
     /// Coordinator for coalescing duplicate sync requests
     pub(crate) sync_coordinator: SyncCoordinator,
-    pub(crate) zap_receipt_trigger: tokio::sync::broadcast::Sender<()>,
+    pub(crate) lnurl_preimage_trigger: tokio::sync::broadcast::Sender<()>,
     pub(crate) initial_synced_watcher: watch::Receiver<bool>,
     pub(crate) external_input_parsers: Vec<ExternalInputParser>,
     pub(crate) spark_private_mode_initialized: Arc<OnceCell<()>>,
