@@ -719,7 +719,7 @@ impl PostgresStorage {
                  SET value = jsonb_set(value::jsonb, '{offset}', '0')::text
                  WHERE key = 'sync_offset' AND value IS NOT NULL",
             ],
-            // Migration 8: Add preimage column for LUD-21 verify support
+            // Migration 8: Add preimage column for LUD-21 and NIP-57 support
             &[
                 "ALTER TABLE lnurl_receive_metadata ADD COLUMN IF NOT EXISTS preimage TEXT",
                 // Clear the lnurl_metadata_updated_after setting to force re-sync

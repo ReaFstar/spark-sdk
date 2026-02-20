@@ -579,11 +579,13 @@ pub struct Config {
     /// When set, received sats will be automatically converted to the specified token
     /// once the balance exceeds the threshold.
     pub stable_balance_config: Option<StableBalanceConfig>,
+
     /// Maximum number of concurrent transfer claims.
     ///
     /// Default is 4. Increase for server environments with high incoming payment volume.
     pub max_concurrent_claims: u32,
-    /// When true, the LNURL server won't track invoice payments for this user (LUD-21 disabled).
+
+    /// When true, the LNURL server won't track invoice payments for this user (LUD-21 and NIP-57 disabled).
     /// This can be useful for privacy-conscious users who don't need invoice payment notifications.
     pub no_invoice_paid_support: bool,
 }
