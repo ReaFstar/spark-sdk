@@ -20,7 +20,7 @@ use spark::ssp::ServiceProvider;
 use spark::token::InMemoryTokenOutputStore;
 use spark::tree::InMemoryTreeStore;
 use spark_wallet::{DefaultSigner, Network, SparkWalletConfig};
-use sqlx::{PgPool, SqlitePool};
+use sqlx::{PgPool, SqlitePool, sqlite::SqlitePoolOptions};
 use std::collections::HashSet;
 use std::str::FromStr;
 use std::{path::PathBuf, sync::Arc};
@@ -144,9 +144,18 @@ async fn main() -> Result<(), anyhow::Error> {
         let repository = postgresql::LnurlRepository::new(pool);
         run_server(args, repository).await?;
     } else {
-        let pool = SqlitePool::connect(&args.db_url)
-            .await
-            .map_err(|e| anyhow!("failed to create connection pool: {:?}", e))?;
+        // For in-memory databases, limit to 1 connection so all queries share
+        // the same database. Each separate connection to `:memory:` creates its
+        // own independent database.
+        let pool = if args.db_url.contains(":memory:") {
+            SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect(&args.db_url)
+                .await
+        } else {
+            SqlitePool::connect(&args.db_url).await
+        }
+        .map_err(|e| anyhow!("failed to create connection pool: {:?}", e))?;
 
         if args.auto_migrate {
             debug!("running sqlite database migrations");

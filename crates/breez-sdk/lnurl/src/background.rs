@@ -266,6 +266,8 @@ pub fn start_background_processor<DB>(
     DB: LnurlRepository + Clone + Send + Sync + 'static,
 {
     tokio::spawn(async move {
+        debug!("Background processor started");
+
         // Process any pending items on startup
         process_newly_paid_queue(&db, nostr_keys.as_ref()).await;
 
@@ -301,6 +303,11 @@ where
             return;
         }
     };
+
+    debug!(
+        "Background processor: found {} pending newly paid items",
+        pending.len()
+    );
 
     for item in pending {
         process_newly_paid_item(db, nostr_keys, &item).await;
