@@ -36,8 +36,8 @@ pub struct _Config {
     /// Maximum number of concurrent transfer claims.
     ///
     /// Controls how many pending Spark transfers can be claimed in parallel.
-    /// Default is 1 (sequential claiming). Increase for server environments
-    /// with high incoming payment volume to improve throughput.
+    /// Default is 4. Increase for server environments with high incoming
+    /// payment volume to improve throughput.
     pub max_concurrent_claims: u32,
 }
 

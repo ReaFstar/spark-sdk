@@ -73,10 +73,10 @@ See [Custom leaf optimization](./optimize.md) for more information and recommend
 
 ## Maximum concurrent claims
 
-Controls how many pending Spark transfers can be claimed in parallel. By default, transfers are claimed sequentially (one at a time) to minimize resource usage and maintain compatibility with typical end-user wallet behavior.
+Controls how many pending Spark transfers can be claimed in parallel. The default value of 4 provides a good balance between throughput and resource usage for most applications.
 
-For server environments or applications that receive a high volume of incoming payments, increasing this value can significantly improve throughput by processing multiple claims concurrently.
+For server environments or applications that receive a high volume of incoming payments, increasing this value can further improve throughput by processing more claims concurrently.
 
-**Default**: 1 (sequential claiming)
+**Default**: 4
 
-**Recommendation**: Most end-user wallets should use the default value. Server applications handling many simultaneous incoming payments may benefit from values between 5-10, depending on their infrastructure capacity.
+**Recommendation**: The default value works well for most applications. Server applications handling many simultaneous incoming payments may benefit from higher values (e.g., 8-16), depending on their infrastructure capacity. End-user wallets with limited resources may reduce this to 1-2.

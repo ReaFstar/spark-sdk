@@ -196,7 +196,7 @@ pub fn default_config(network: Network) -> Config {
             multiplicity: 1,
         },
         stable_balance_config: None,
-        max_concurrent_claims: 1,
+        max_concurrent_claims: 4,
     }
 }
 

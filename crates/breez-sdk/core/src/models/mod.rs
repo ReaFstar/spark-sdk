@@ -582,7 +582,7 @@ pub struct Config {
     pub stable_balance_config: Option<StableBalanceConfig>,
     /// Maximum number of concurrent transfer claims.
     ///
-    /// Default is 1. Increase for server environments with high incoming payment volume.
+    /// Default is 4. Increase for server environments with high incoming payment volume.
     pub max_concurrent_claims: u32,
 }
 
