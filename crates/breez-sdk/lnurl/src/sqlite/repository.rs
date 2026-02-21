@@ -277,8 +277,14 @@ impl crate::repository::LnurlRepository for LnurlRepository {
 
     async fn upsert_invoice(&self, invoice: &Invoice) -> Result<(), LnurlRepositoryError> {
         sqlx::query(
-            "REPLACE INTO invoices (payment_hash, user_pubkey, invoice, preimage, invoice_expiry, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            "INSERT INTO invoices (payment_hash, user_pubkey, invoice, preimage, invoice_expiry, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT(payment_hash) DO UPDATE SET
+                user_pubkey = excluded.user_pubkey,
+                invoice = excluded.invoice,
+                preimage = excluded.preimage,
+                invoice_expiry = excluded.invoice_expiry,
+                updated_at = excluded.updated_at",
         )
         .bind(&invoice.payment_hash)
         .bind(&invoice.user_pubkey)
