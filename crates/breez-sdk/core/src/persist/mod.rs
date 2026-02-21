@@ -393,22 +393,30 @@ impl ObjectCacheRepository {
         self.storage
             .set_cached_item(
                 LIGHTNING_ADDRESS_KEY.to_string(),
-                serde_json::to_string(value)?,
+                serde_json::to_string(&Some(value))?,
             )
             .await?;
         Ok(())
     }
 
+    /// Marks the lightning address as "recovered, no address registered" by storing `null`.
     pub(crate) async fn delete_lightning_address(&self) -> Result<(), StorageError> {
         self.storage
-            .delete_cached_item(LIGHTNING_ADDRESS_KEY.to_string())
+            .set_cached_item(
+                LIGHTNING_ADDRESS_KEY.to_string(),
+                serde_json::to_string(&None::<LightningAddressInfo>)?,
+            )
             .await?;
         Ok(())
     }
 
+    /// Returns:
+    /// - `Ok(None)` — key absent, never recovered
+    /// - `Ok(Some(None))` — recovered, no address registered
+    /// - `Ok(Some(Some(info)))` — recovered, has address
     pub(crate) async fn fetch_lightning_address(
         &self,
-    ) -> Result<Option<LightningAddressInfo>, StorageError> {
+    ) -> Result<Option<Option<LightningAddressInfo>>, StorageError> {
         let value = self
             .storage
             .get_cached_item(LIGHTNING_ADDRESS_KEY.to_string())
