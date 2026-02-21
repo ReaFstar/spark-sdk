@@ -60,11 +60,11 @@ Future<void> configureStableBalance() async {
   print(config);
 }
 
-Future<void> configureNoInvoicePaidSupport() async {
-  // ANCHOR: no-invoice-paid-support
-  // Disable invoice paid notifications to LNURL server
+Future<void> configureLnurlPrivateModeEnabled() async {
+  // ANCHOR: lnurl-private-mode-enabled
+  // Enable LNURL private mode
   var config = defaultConfig(network: Network.mainnet)
-      .copyWith(noInvoicePaidSupport: true);
-  // ANCHOR_END: no-invoice-paid-support
+      .copyWith(lnurlPrivateModeEnabled: true);
+  // ANCHOR_END: lnurl-private-mode-enabled
   print(config);
 }

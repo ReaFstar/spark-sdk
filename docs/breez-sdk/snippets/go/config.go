@@ -68,11 +68,11 @@ func ConfigureStableBalance() {
 	log.Printf("Config: %+v", config)
 }
 
-func ConfigureNoInvoicePaidSupport() {
-	// ANCHOR: no-invoice-paid-support
-	// Disable invoice paid notifications to LNURL server
+func ConfigureLnurlPrivateModeEnabled() {
+	// ANCHOR: lnurl-private-mode-enabled
+	// Enable LNURL private mode
 	config := breez_sdk_spark.DefaultConfig(breez_sdk_spark.NetworkMainnet)
-	config.NoInvoicePaidSupport = true
-	// ANCHOR_END: no-invoice-paid-support
+	config.LnurlPrivateModeEnabled = true
+	// ANCHOR_END: lnurl-private-mode-enabled
 	log.Printf("Config: %+v", config)
 }

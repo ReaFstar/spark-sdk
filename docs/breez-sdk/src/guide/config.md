@@ -58,16 +58,14 @@ This configuration option is only relevant when the SDK is initialized for the f
 
 </div>
 
-## Invoice paid notifications
+## LNURL private mode
 
-Controls whether the SDK notifies the LNURL server when invoices created by the LNURL server are paid. Enabled by default, which provides:
+Controls whether the SDK operates in LNURL private mode. When enabled, the LNURL server won't track invoice payments for this user, disabling:
 
 - **[LUD-21](https://github.com/lnurl/luds/blob/luds/21.md)**: Invoice verification via public endpoint
 - **[NIP-57](https://github.com/nostr-protocol/nips/blob/master/57.md)**: Server-side zap receipt publishing
 
-Disable for privacy using the configuration option below.
-
-{{#tabs config:no-invoice-paid-support}}
+{{#tabs config:lnurl-private-mode-enabled}}
 
 ## Optimization configuration
 

@@ -37,7 +37,7 @@ impl crate::repository::LnurlRepository for LnurlRepository {
         name: &str,
     ) -> Result<Option<User>, LnurlRepositoryError> {
         let maybe_user = sqlx::query(
-            "SELECT pubkey, name, description, no_invoice_paid_support
+            "SELECT pubkey, name, description, lnurl_private_mode_enabled
              FROM users
              WHERE domain = $1 AND name = $2",
         )
@@ -51,7 +51,7 @@ impl crate::repository::LnurlRepository for LnurlRepository {
                 pubkey: row.try_get(0)?,
                 name: row.try_get(1)?,
                 description: row.try_get(2)?,
-                no_invoice_paid_support: row.try_get(3)?,
+                lnurl_private_mode_enabled: row.try_get(3)?,
             })
         })
         .transpose()?;
@@ -64,7 +64,7 @@ impl crate::repository::LnurlRepository for LnurlRepository {
         pubkey: &str,
     ) -> Result<Option<User>, LnurlRepositoryError> {
         let maybe_user = sqlx::query(
-            "SELECT pubkey, name, description, no_invoice_paid_support
+            "SELECT pubkey, name, description, lnurl_private_mode_enabled
                 FROM users
                 WHERE domain = $1 AND pubkey = $2",
         )
@@ -78,7 +78,7 @@ impl crate::repository::LnurlRepository for LnurlRepository {
                 pubkey: row.try_get(0)?,
                 name: row.try_get(1)?,
                 description: row.try_get(2)?,
-                no_invoice_paid_support: row.try_get(3)?,
+                lnurl_private_mode_enabled: row.try_get(3)?,
             })
         })
         .transpose()?;
@@ -87,19 +87,19 @@ impl crate::repository::LnurlRepository for LnurlRepository {
 
     async fn upsert_user(&self, user: &User) -> Result<(), LnurlRepositoryError> {
         sqlx::query(
-            "INSERT INTO users (domain, pubkey, name, description, no_invoice_paid_support, updated_at)
+            "INSERT INTO users (domain, pubkey, name, description, lnurl_private_mode_enabled, updated_at)
              VALUES ($1, $2, $3, $4, $5, $6)
              ON CONFLICT(domain, pubkey) DO UPDATE
              SET name = excluded.name
              ,   description = excluded.description
-             ,   no_invoice_paid_support = excluded.no_invoice_paid_support
+             ,   lnurl_private_mode_enabled = excluded.lnurl_private_mode_enabled
              ,   updated_at = excluded.updated_at",
         )
         .bind(&user.domain)
         .bind(&user.pubkey)
         .bind(&user.name)
         .bind(&user.description)
-        .bind(user.no_invoice_paid_support)
+        .bind(user.lnurl_private_mode_enabled)
         .bind(now())
         .execute(&self.pool)
         .await?;
@@ -343,7 +343,7 @@ impl crate::repository::LnurlRepository for LnurlRepository {
             "SELECT DISTINCT i.user_pubkey
              FROM invoices i
              JOIN users u ON i.user_pubkey = u.pubkey
-             WHERE i.invoice_expiry > $1 AND i.preimage IS NULL AND u.no_invoice_paid_support = FALSE",
+             WHERE i.invoice_expiry > $1 AND i.preimage IS NULL AND u.lnurl_private_mode_enabled = FALSE",
         )
         .bind(now)
         .fetch_all(&self.pool)
@@ -364,7 +364,7 @@ impl crate::repository::LnurlRepository for LnurlRepository {
             "SELECT COUNT(*)
              FROM invoices i
              JOIN users u ON i.user_pubkey = u.pubkey
-             WHERE i.user_pubkey = $1 AND i.invoice_expiry > $2 AND i.preimage IS NULL AND u.no_invoice_paid_support = FALSE",
+             WHERE i.user_pubkey = $1 AND i.invoice_expiry > $2 AND i.preimage IS NULL AND u.lnurl_private_mode_enabled = FALSE",
         )
         .bind(user_pubkey)
         .bind(now)

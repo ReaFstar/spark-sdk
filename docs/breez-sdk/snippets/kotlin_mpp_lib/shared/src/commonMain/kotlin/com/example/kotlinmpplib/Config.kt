@@ -57,12 +57,12 @@ class Config {
         println("Config: $config")
     }
 
-    fun configureNoInvoicePaidSupport() {
-        // ANCHOR: no-invoice-paid-support
-        // Disable invoice paid notifications to LNURL server
+    fun configureLnurlPrivateModeEnabled() {
+        // ANCHOR: lnurl-private-mode-enabled
+        // Enable LNURL private mode
         val config = defaultConfig(Network.MAINNET)
-        config.noInvoicePaidSupport = true
-        // ANCHOR_END: no-invoice-paid-support
+        config.lnurlPrivateModeEnabled = true
+        // ANCHOR_END: lnurl-private-mode-enabled
         println("Config: $config")
     }
 }

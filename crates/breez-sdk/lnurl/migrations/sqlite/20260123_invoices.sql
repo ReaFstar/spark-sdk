@@ -19,4 +19,4 @@ CREATE TABLE newly_paid (
 );
 CREATE INDEX idx_newly_paid_next_retry_at ON newly_paid(next_retry_at);
 
-ALTER TABLE users ADD COLUMN no_invoice_paid_support INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN lnurl_private_mode_enabled INTEGER NOT NULL DEFAULT 0;

@@ -585,9 +585,9 @@ pub struct Config {
     /// Default is 4. Increase for server environments with high incoming payment volume.
     pub max_concurrent_claims: u32,
 
-    /// When true, the LNURL server won't track invoice payments for this user (LUD-21 and NIP-57 disabled).
-    /// This can be useful for privacy-conscious users who don't need invoice payment notifications.
-    pub no_invoice_paid_support: bool,
+    /// When true, the SDK operates in LNURL private mode: the LNURL server won't track
+    /// invoice payments for this user (LUD-21 and NIP-57 disabled).
+    pub lnurl_private_mode_enabled: bool,
 }
 
 #[derive(Debug, Clone)]

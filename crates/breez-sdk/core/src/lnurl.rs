@@ -42,8 +42,9 @@ impl std::fmt::Display for LnurlServerError {
 pub struct RegisterLightningAddressRequest {
     pub username: String,
     pub description: String,
-    /// When true, the server won't track invoice payments for this user (LUD-21 and NIP-57 disabled)
-    pub no_invoice_paid_support: bool,
+    /// When true, the SDK operates in LNURL private mode: the LNURL server won't track
+    /// invoice payments for this user (LUD-21 and NIP-57 disabled).
+    pub lnurl_private_mode_enabled: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -245,7 +246,7 @@ impl LnurlServerClient for DefaultLnurlServerClient {
             description: request.description.clone(),
             signature,
             timestamp: Some(timestamp),
-            no_invoice_paid_support: request.no_invoice_paid_support,
+            lnurl_private_mode_enabled: request.lnurl_private_mode_enabled,
         };
 
         let url = format!("{}/lnurlpay/{}", self.base_url(), pubkey);

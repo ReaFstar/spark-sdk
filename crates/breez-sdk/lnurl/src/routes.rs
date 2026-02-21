@@ -154,7 +154,7 @@ where
             pubkey: pubkey.to_string(),
             name: username,
             description: payload.description,
-            no_invoice_paid_support: payload.no_invoice_paid_support,
+            lnurl_private_mode_enabled: payload.lnurl_private_mode_enabled,
         };
 
         if let Err(e) = state.db.upsert_user(&user).await {
@@ -564,10 +564,10 @@ where
             return Err((StatusCode::NOT_FOUND, Json(Value::String(String::new()))));
         };
 
-        // When no_invoice_paid_support is true, omit nostr fields entirely
+        // In LNURL private mode, omit nostr fields entirely
         // Otherwise, always return server's nostrPubkey for zap receipt signing
         let (allows_nostr, nostr_pubkey) = if let Some(nostr_keys) = state.nostr_keys.as_ref()
-            && !user.no_invoice_paid_support
+            && !user.lnurl_private_mode_enabled
         {
             let xonly_pubkey = nostr_keys.public_key.xonly().map_err(|e| {
                 error!(
@@ -743,7 +743,7 @@ where
         }
 
         // Store all invoices for LUD-21 verify support (unless user opted out)
-        let verify_url = if user.no_invoice_paid_support {
+        let verify_url = if user.lnurl_private_mode_enabled {
             None
         } else {
             // Store invoice in invoices table

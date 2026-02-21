@@ -54,11 +54,11 @@ func configureStableBalance() async throws {
     print("Config: \(config)")
 }
 
-func configureNoInvoicePaidSupport() async throws {
-    // ANCHOR: no-invoice-paid-support
-    // Disable invoice paid notifications to LNURL server
+func configureLnurlPrivateModeEnabled() async throws {
+    // ANCHOR: lnurl-private-mode-enabled
+    // Enable LNURL private mode
     var config = defaultConfig(network: Network.mainnet)
-    config.noInvoicePaidSupport = true
-    // ANCHOR_END: no-invoice-paid-support
+    config.lnurlPrivateModeEnabled = true
+    // ANCHOR_END: lnurl-private-mode-enabled
     print("Config: \(config)")
 }

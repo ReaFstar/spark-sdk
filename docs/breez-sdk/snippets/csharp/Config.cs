@@ -65,15 +65,15 @@ namespace BreezSdkSnippets
             // ANCHOR_END: stable-balance-config
         }
 
-        void ConfigureNoInvoicePaidSupport()
+        void ConfigureLnurlPrivateModeEnabled()
         {
-            // ANCHOR: no-invoice-paid-support
-            // Disable invoice paid notifications to LNURL server
+            // ANCHOR: lnurl-private-mode-enabled
+            // Enable LNURL private mode
             var config = BreezSdkSparkMethods.DefaultConfig(Network.Mainnet) with
             {
-                noInvoicePaidSupport = true
+                lnurlPrivateModeEnabled = true
             };
-            // ANCHOR_END: no-invoice-paid-support
+            // ANCHOR_END: lnurl-private-mode-enabled
         }
     }
 }

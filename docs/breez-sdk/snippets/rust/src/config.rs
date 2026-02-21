@@ -65,12 +65,12 @@ pub(crate) fn configure_stable_balance() -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn configure_no_invoice_paid_support() -> Result<()> {
-    // ANCHOR: no-invoice-paid-support
-    // Disable invoice paid notifications to LNURL server
+pub(crate) fn configure_lnurl_private_mode_enabled() -> Result<()> {
+    // ANCHOR: lnurl-private-mode-enabled
+    // Enable LNURL private mode
     let mut config = default_config(Network::Mainnet);
-    config.no_invoice_paid_support = true;
-    // ANCHOR_END: no-invoice-paid-support
+    config.lnurl_private_mode_enabled = true;
+    // ANCHOR_END: lnurl-private-mode-enabled
     info!("Config: {:?}", config);
     Ok(())
 }

@@ -54,12 +54,12 @@ const exampleConfigureStableBalance = async () => {
   console.log('Config:', config)
 }
 
-const exampleConfigureNoInvoicePaidSupport = async () => {
-  // ANCHOR: no-invoice-paid-support
-  // Disable invoice paid notifications to LNURL server
+const exampleConfigureLnurlPrivateModeEnabled = async () => {
+  // ANCHOR: lnurl-private-mode-enabled
+  // Enable LNURL private mode
   const config = defaultConfig('mainnet')
-  config.noInvoicePaidSupport = true
-  // ANCHOR_END: no-invoice-paid-support
+  config.lnurlPrivateModeEnabled = true
+  // ANCHOR_END: lnurl-private-mode-enabled
   console.log('Config:', config)
 }
 
@@ -68,5 +68,5 @@ export {
   exampleConfigurePrivateEnabledDefault,
   exampleConfigureOptimizationConfiguration,
   exampleConfigureStableBalance,
-  exampleConfigureNoInvoicePaidSupport
+  exampleConfigureLnurlPrivateModeEnabled
 }
