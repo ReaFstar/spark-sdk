@@ -1,6 +1,6 @@
 # Payment fundamentals
 
-How to send, receive and manage payments using the Breez SDK - Nodeless *(Spark Implementation)*:
+How to send, receive and manage payments using the Breez SDK - Spark:
 
 - **[Parsing inputs]** to determine the payment type
 - **[Receiving payments]** via a Lightning invoice, Bitcoin address or Spark address

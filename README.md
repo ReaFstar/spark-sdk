@@ -2,11 +2,10 @@
 
 ## **Overview**
 
-The Breez SDK provides developers with an end-to-end solution for integrating self-custodial bitcoin into their apps and services.
+The Breez SDK provides developers with an end-to-end solution for integrating instant, self-custodial bitcoin into their apps and services.
 It eliminates the need for third parties, simplifies the complexities of Bitcoin and Lightning, and enables seamless onboarding for billions of users to the future of value transfer.
 
 **The Breez SDK is free for developers.**
-
 
 ## **What is the Breez SDK - Spark?**
 
