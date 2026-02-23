@@ -178,7 +178,10 @@ impl TransferService {
     ) -> Result<Transfer, ServiceError> {
         if let ServiceError::ServiceConnectionError(operator_rpc_error) = &error
             && let OperatorRpcError::Connection(status) = operator_rpc_error.as_ref()
-            && status.code() == tonic::Code::Internal
+            && matches!(
+                status.code(),
+                tonic::Code::Internal | tonic::Code::AlreadyExists
+            )
         {
             // There was an RPC connection error. Check if the transfer already exists remotely.
             let operator_transfers = self
