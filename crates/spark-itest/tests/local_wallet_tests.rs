@@ -4,6 +4,7 @@ use rstest::*;
 use spark_itest::helpers::{
     WalletsFixture, deposit_to_wallet, deposit_with_amount, wait_for, wallets,
 };
+use spark_wallet::TransferId;
 use tracing::info;
 
 #[rstest]
@@ -175,6 +176,67 @@ async fn test_transfer_with_odd_leaf_greedy_succeeds(
     let alice_balance_after = alice.get_balance().await?;
     info!("Alice balance after transfer: {}", alice_balance_after);
     assert_eq!(alice_balance_after, 3000); // Only the odd leaf remains
+
+    Ok(())
+}
+
+/// Test that sending a transfer with the same transfer_id twice recovers the
+/// existing transfer from the operator instead of failing with AlreadyExists.
+///
+/// This simulates the scenario where `with_leafs_spent_retry!` retries after the
+/// operator has already created the transfer record (e.g., due to a leaf-spent error
+/// that occurred after transfer creation).
+#[rstest]
+#[tokio::test]
+#[test_log::test]
+async fn test_transfer_duplicate_transfer_id_recovers(
+    #[future] wallets: WalletsFixture,
+) -> Result<()> {
+    let fixture = wallets.await;
+    let alice = &fixture.alice_wallet;
+    let bob = &fixture.bob_wallet;
+    let bitcoind = &fixture.fixtures.bitcoind;
+
+    // Deposit two separate leaves so Alice has funds available for the second
+    // transfer attempt (the first transfer locks/spends one leaf).
+    deposit_with_amount(alice, bitcoind, 5000).await?;
+    deposit_with_amount(alice, bitcoind, 5000).await?;
+
+    let alice_balance = alice.get_balance().await?;
+    info!("Alice balance: {} sats", alice_balance);
+    assert_eq!(alice_balance, 10_000);
+
+    let bob_address = bob.get_spark_address()?;
+    let transfer_id = TransferId::generate();
+    info!("Using transfer_id: {}", transfer_id);
+
+    // First transfer with this transfer_id — should succeed normally
+    let transfer1 = alice
+        .transfer(5000, &bob_address, Some(transfer_id.clone()))
+        .await?;
+    info!("First transfer succeeded: id={}", transfer1.id);
+
+    // Wait for Bob to receive and for Alice's leaves to settle
+    wait_for(
+        || async { bob.get_balance().await.unwrap_or(0) == 5000 },
+        30,
+        "Bob's balance to become 5000",
+    )
+    .await?;
+
+    // Second transfer with the SAME transfer_id — the operator will return
+    // AlreadyExists because it already created the transfer record on the
+    // first call. The SDK recovers the existing transfer rather than
+    // propagating the error.
+    let transfer2 = alice
+        .transfer(5000, &bob_address, Some(transfer_id.clone()))
+        .await?;
+    info!("Second transfer recovered: id={}", transfer2.id);
+
+    assert_eq!(
+        transfer1.id, transfer2.id,
+        "Both calls should return the same transfer"
+    );
 
     Ok(())
 }
