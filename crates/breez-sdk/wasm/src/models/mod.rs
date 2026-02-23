@@ -911,6 +911,22 @@ pub enum PaymentDetailsFilter {
     },
     Lightning {
         htlc_status: Option<Vec<SparkHtlcStatus>>,
+    },
+}
+
+#[macros::extern_wasm_bindgen(breez_sdk_spark::StoragePaymentDetailsFilter)]
+pub enum StoragePaymentDetailsFilter {
+    Spark {
+        htlc_status: Option<Vec<SparkHtlcStatus>>,
+        conversion_refund_needed: Option<bool>,
+    },
+    Token {
+        conversion_refund_needed: Option<bool>,
+        tx_hash: Option<String>,
+        tx_type: Option<TokenTransactionType>,
+    },
+    Lightning {
+        htlc_status: Option<Vec<SparkHtlcStatus>>,
         has_lnurl_preimage: Option<bool>,
     },
 }
@@ -921,6 +937,19 @@ pub struct ListPaymentsRequest {
     pub status_filter: Option<Vec<PaymentStatus>>,
     pub asset_filter: Option<AssetFilter>,
     pub payment_details_filter: Option<Vec<PaymentDetailsFilter>>,
+    pub from_timestamp: Option<u64>,
+    pub to_timestamp: Option<u64>,
+    pub offset: Option<u32>,
+    pub limit: Option<u32>,
+    pub sort_ascending: Option<bool>,
+}
+
+#[macros::extern_wasm_bindgen(breez_sdk_spark::StorageListPaymentsRequest)]
+pub struct StorageListPaymentsRequest {
+    pub type_filter: Option<Vec<PaymentType>>,
+    pub status_filter: Option<Vec<PaymentStatus>>,
+    pub asset_filter: Option<AssetFilter>,
+    pub payment_details_filter: Option<Vec<StoragePaymentDetailsFilter>>,
     pub from_timestamp: Option<u64>,
     pub to_timestamp: Option<u64>,
     pub offset: Option<u32>,

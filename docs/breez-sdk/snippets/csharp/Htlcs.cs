@@ -88,8 +88,7 @@ namespace BreezSdkSnippets
                     new PaymentDetailsFilter.Lightning(
                         htlcStatus: new List<SparkHtlcStatus> {
                             SparkHtlcStatus.WaitingForPreimage
-                        },
-                        hasLnurlPreimage: null
+                        }
                     )
                 }
             );

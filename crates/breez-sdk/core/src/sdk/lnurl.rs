@@ -3,17 +3,19 @@ use tokio_with_wasm::alias as tokio;
 use tracing::{Instrument, debug, error, info};
 
 use crate::{
-    FeePolicy, InputType, ListPaymentsRequest, LnurlAuthRequestDetails, LnurlCallbackStatus,
-    LnurlPayInfo, LnurlPayRequest, LnurlPayResponse, LnurlWithdrawInfo, LnurlWithdrawRequest,
-    LnurlWithdrawResponse, PaymentDetails, PaymentDetailsFilter, PaymentStatus, PaymentType,
-    PrepareLnurlPayRequest, PrepareLnurlPayResponse, SendPaymentMethod, SetLnurlMetadataItem,
-    WaitForPaymentIdentifier,
+    FeePolicy, InputType, LnurlAuthRequestDetails, LnurlCallbackStatus, LnurlPayInfo,
+    LnurlPayRequest, LnurlPayResponse, LnurlWithdrawInfo, LnurlWithdrawRequest,
+    LnurlWithdrawResponse, PaymentDetails, PaymentStatus, PaymentType, PrepareLnurlPayRequest,
+    PrepareLnurlPayResponse, SendPaymentMethod, SetLnurlMetadataItem, WaitForPaymentIdentifier,
     error::SdkError,
     events::SdkEvent,
     models::{
         PrepareSendPaymentResponse, ReceivePaymentMethod, ReceivePaymentRequest, SendPaymentRequest,
     },
-    persist::{ObjectCacheRepository, PaymentMetadata},
+    persist::{
+        ObjectCacheRepository, PaymentMetadata, StorageListPaymentsRequest,
+        StoragePaymentDetailsFilter,
+    },
 };
 use breez_sdk_common::lnurl::withdraw::execute_lnurl_withdraw;
 
@@ -535,10 +537,10 @@ impl BreezSdk {
             // Query only payments that need their preimage sent to the server
             let pending = self
                 .storage
-                .list_payments(ListPaymentsRequest {
+                .list_payments(StorageListPaymentsRequest {
                     type_filter: Some(vec![PaymentType::Receive]),
                     status_filter: Some(vec![PaymentStatus::Completed]),
-                    payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
+                    payment_details_filter: Some(vec![StoragePaymentDetailsFilter::Lightning {
                         htlc_status: None,
                         has_lnurl_preimage: Some(false),
                     }]),

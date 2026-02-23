@@ -397,7 +397,7 @@ impl BreezSdk {
         &self,
         request: ListPaymentsRequest,
     ) -> Result<ListPaymentsResponse, SdkError> {
-        let mut payments = self.storage.list_payments(request).await?;
+        let mut payments = self.storage.list_payments(request.into()).await?;
 
         // Collect all parent IDs and batch query for related payments
         let parent_ids: Vec<String> = payments.iter().map(|p| p.id.clone()).collect();

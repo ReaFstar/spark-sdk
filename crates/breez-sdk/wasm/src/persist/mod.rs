@@ -10,8 +10,9 @@ use wasm_bindgen_futures::js_sys::Promise;
 use std::collections::HashMap;
 
 use crate::models::{
-    DepositInfo, IncomingChange, ListPaymentsRequest, OutgoingChange, Payment, PaymentMetadata,
-    Record, SetLnurlMetadataItem, UnversionedRecordChange, UpdateDepositPayload,
+    DepositInfo, IncomingChange, OutgoingChange, Payment, PaymentMetadata, Record,
+    SetLnurlMetadataItem, StorageListPaymentsRequest, UnversionedRecordChange,
+    UpdateDepositPayload,
 };
 
 pub struct WasmStorage {
@@ -114,7 +115,7 @@ impl breez_sdk_spark::Storage for WasmStorage {
 
     async fn list_payments(
         &self,
-        request: breez_sdk_spark::ListPaymentsRequest,
+        request: breez_sdk_spark::StorageListPaymentsRequest,
     ) -> Result<Vec<breez_sdk_spark::Payment>, StorageError> {
         let promise = self
             .storage
@@ -418,7 +419,7 @@ const STORAGE_INTERFACE: &'static str = r#"export interface Storage {
     getCachedItem: (key: string) => Promise<string | null>;
     setCachedItem: (key: string, value: string) => Promise<void>;
     deleteCachedItem: (key: string) => Promise<void>;
-    listPayments: (request: ListPaymentsRequest) => Promise<Payment[]>;
+    listPayments: (request: StorageListPaymentsRequest) => Promise<Payment[]>;
     insertPayment: (payment: Payment) => Promise<void>;
     insertPaymentMetadata: (paymentId: string, metadata: PaymentMetadata) => Promise<void>;
     getPaymentById: (id: string) => Promise<Payment>;
@@ -455,7 +456,10 @@ extern "C" {
     pub fn delete_cached_item(this: &Storage, key: String) -> Result<Promise, JsValue>;
 
     #[wasm_bindgen(structural, method, js_name = listPayments, catch)]
-    pub fn list_payments(this: &Storage, request: ListPaymentsRequest) -> Result<Promise, JsValue>;
+    pub fn list_payments(
+        this: &Storage,
+        request: StorageListPaymentsRequest,
+    ) -> Result<Promise, JsValue>;
 
     #[wasm_bindgen(structural, method, js_name = insertPayment, catch)]
     pub fn insert_payment(this: &Storage, payment: Payment) -> Result<Promise, JsValue>;

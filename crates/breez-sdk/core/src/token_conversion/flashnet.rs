@@ -16,9 +16,8 @@ use tracing::{Instrument, debug, error, info, warn};
 use web_time::Duration;
 
 use crate::{
-    ListPaymentsRequest, Network, Payment, PaymentDetails, PaymentDetailsFilter, PaymentMetadata,
-    Storage,
-    persist::ObjectCacheRepository,
+    Network, Payment, PaymentDetails, PaymentMetadata, Storage,
+    persist::{ObjectCacheRepository, StorageListPaymentsRequest, StoragePaymentDetailsFilter},
     token_conversion::{ConversionAmount, DEFAULT_CONVERSION_MAX_SLIPPAGE_BPS},
     utils::token::token_transaction_to_payments,
 };
@@ -131,13 +130,13 @@ impl FlashnetTokenConverter {
     ) -> Result<(), ConversionError> {
         debug!("Checking for failed conversions needing refunds");
         let payments = storage
-            .list_payments(ListPaymentsRequest {
+            .list_payments(StorageListPaymentsRequest {
                 payment_details_filter: Some(vec![
-                    PaymentDetailsFilter::Spark {
+                    StoragePaymentDetailsFilter::Spark {
                         htlc_status: None,
                         conversion_refund_needed: Some(true),
                     },
-                    PaymentDetailsFilter::Token {
+                    StoragePaymentDetailsFilter::Token {
                         conversion_refund_needed: Some(true),
                         tx_hash: None,
                         tx_type: None,

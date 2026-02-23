@@ -3,11 +3,10 @@ use std::collections::HashMap;
 use chrono::Utc;
 
 use crate::{
-    DepositClaimError, ListPaymentsRequest, LnurlWithdrawInfo, Payment, PaymentDetails,
-    PaymentDetailsFilter, PaymentMetadata, PaymentMethod, PaymentStatus, PaymentType,
-    SparkHtlcDetails, SparkHtlcStatus, Storage, TokenMetadata, TokenTransactionType,
-    UpdateDepositPayload,
-    persist::ObjectCacheRepository,
+    DepositClaimError, LnurlWithdrawInfo, Payment, PaymentDetails, PaymentMetadata, PaymentMethod,
+    PaymentStatus, PaymentType, SparkHtlcDetails, SparkHtlcStatus, Storage, TokenMetadata,
+    TokenTransactionType, UpdateDepositPayload,
+    persist::{ObjectCacheRepository, StorageListPaymentsRequest, StoragePaymentDetailsFilter},
     sync_storage::{Record, RecordId, UnversionedRecordChange},
 };
 
@@ -842,7 +841,7 @@ pub async fn test_storage(storage: Box<dyn Storage>) {
         .unwrap();
     // List all payments (excludes child payments with parent_payment_id set)
     let payments = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             offset: Some(0),
             limit: Some(20),
             ..Default::default()
@@ -1427,7 +1426,7 @@ pub async fn test_payment_type_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by Send type only
     let send_only = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             type_filter: Some(vec![PaymentType::Send]),
             ..Default::default()
         })
@@ -1438,7 +1437,7 @@ pub async fn test_payment_type_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by Receive type only
     let receive_only = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             type_filter: Some(vec![PaymentType::Receive]),
             ..Default::default()
         })
@@ -1449,7 +1448,7 @@ pub async fn test_payment_type_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by both types
     let both_types = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             type_filter: Some(vec![PaymentType::Send, PaymentType::Receive]),
             ..Default::default()
         })
@@ -1459,7 +1458,7 @@ pub async fn test_payment_type_filtering(storage: Box<dyn Storage>) {
 
     // Test with no filter (should return all)
     let all_payments = storage
-        .list_payments(ListPaymentsRequest::default())
+        .list_payments(StorageListPaymentsRequest::default())
         .await
         .unwrap();
     assert_eq!(all_payments.len(), 2);
@@ -1521,7 +1520,7 @@ pub async fn test_payment_status_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by Completed status only
     let completed_only = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             status_filter: Some(vec![PaymentStatus::Completed]),
             ..Default::default()
         })
@@ -1532,7 +1531,7 @@ pub async fn test_payment_status_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by Pending status only
     let pending_only = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             status_filter: Some(vec![PaymentStatus::Pending]),
             ..Default::default()
         })
@@ -1543,7 +1542,7 @@ pub async fn test_payment_status_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by multiple statuses
     let completed_or_failed = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             status_filter: Some(vec![PaymentStatus::Completed, PaymentStatus::Failed]),
             ..Default::default()
         })
@@ -1655,7 +1654,7 @@ pub async fn test_asset_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by Bitcoin
     let spark_only = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             asset_filter: Some(crate::AssetFilter::Bitcoin),
             ..Default::default()
         })
@@ -1665,7 +1664,7 @@ pub async fn test_asset_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by Token (no identifier)
     let token_only = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             asset_filter: Some(crate::AssetFilter::Token {
                 token_identifier: None,
             }),
@@ -1678,7 +1677,7 @@ pub async fn test_asset_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by Token with specific identifier
     let token_specific = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             asset_filter: Some(crate::AssetFilter::Token {
                 token_identifier: Some("token_id_1".to_string()),
             }),
@@ -1691,7 +1690,7 @@ pub async fn test_asset_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by Token with non-existent identifier
     let token_no_match = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             asset_filter: Some(crate::AssetFilter::Token {
                 token_identifier: Some("nonexistent".to_string()),
             }),
@@ -1796,8 +1795,8 @@ pub async fn test_spark_htlc_status_filtering(storage: Box<dyn Storage>) {
 
     // Test filter for WaitingForPreimage
     let waiting_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Spark {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Spark {
                 htlc_status: Some(vec![SparkHtlcStatus::WaitingForPreimage]),
                 conversion_refund_needed: None,
             }]),
@@ -1810,8 +1809,8 @@ pub async fn test_spark_htlc_status_filtering(storage: Box<dyn Storage>) {
 
     // Test filter for PreimageShared
     let shared_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Spark {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Spark {
                 htlc_status: Some(vec![SparkHtlcStatus::PreimageShared]),
                 conversion_refund_needed: None,
             }]),
@@ -1824,8 +1823,8 @@ pub async fn test_spark_htlc_status_filtering(storage: Box<dyn Storage>) {
 
     // Test filter for Returned
     let returned_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Spark {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Spark {
                 htlc_status: Some(vec![SparkHtlcStatus::Returned]),
                 conversion_refund_needed: None,
             }]),
@@ -1838,8 +1837,8 @@ pub async fn test_spark_htlc_status_filtering(storage: Box<dyn Storage>) {
 
     // Test filter for multiple statuses (WaitingForPreimage and PreimageShared)
     let multiple_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Spark {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Spark {
                 htlc_status: Some(vec![
                     SparkHtlcStatus::WaitingForPreimage,
                     SparkHtlcStatus::PreimageShared,
@@ -1856,8 +1855,8 @@ pub async fn test_spark_htlc_status_filtering(storage: Box<dyn Storage>) {
 
     // Test that non-HTLC payment is not included in any HTLC status filter
     let all_htlc_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Spark {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Spark {
                 htlc_status: Some(vec![
                     SparkHtlcStatus::WaitingForPreimage,
                     SparkHtlcStatus::PreimageShared,
@@ -1990,15 +1989,15 @@ pub async fn test_conversion_refund_needed_filtering(storage: Box<dyn Storage>) 
         .unwrap();
 
     let payments = storage
-        .list_payments(ListPaymentsRequest::default())
+        .list_payments(StorageListPaymentsRequest::default())
         .await
         .unwrap();
     assert_eq!(payments.len(), 3);
 
     // Test filter for payments missing transfer refund info
     let missing_refund_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Spark {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Spark {
                 htlc_status: None,
                 conversion_refund_needed: Some(true),
             }]),
@@ -2011,8 +2010,8 @@ pub async fn test_conversion_refund_needed_filtering(storage: Box<dyn Storage>) 
 
     // Test filter for payments with transfer refund info present
     let present_refund_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Token {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Token {
                 conversion_refund_needed: Some(false),
                 tx_hash: None,
                 tx_type: None,
@@ -2026,13 +2025,13 @@ pub async fn test_conversion_refund_needed_filtering(storage: Box<dyn Storage>) 
 
     // Test multiple payment detail filters
     let multiple_filters = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             payment_details_filter: Some(vec![
-                crate::PaymentDetailsFilter::Spark {
+                crate::StoragePaymentDetailsFilter::Spark {
                     htlc_status: None,
                     conversion_refund_needed: Some(true),
                 },
-                crate::PaymentDetailsFilter::Token {
+                crate::StoragePaymentDetailsFilter::Token {
                     conversion_refund_needed: Some(false),
                     tx_hash: None,
                     tx_type: None,
@@ -2046,8 +2045,8 @@ pub async fn test_conversion_refund_needed_filtering(storage: Box<dyn Storage>) 
 
     // Test filter for token payments missing transfer refund info
     let token_no_refund_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Token {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Token {
                 conversion_refund_needed: Some(true),
                 tx_hash: None,
                 tx_type: None,
@@ -2060,8 +2059,8 @@ pub async fn test_conversion_refund_needed_filtering(storage: Box<dyn Storage>) 
 
     // Test filter for spark payments with transfer refund info present
     let spark_with_refund_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Spark {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Spark {
                 htlc_status: None,
                 conversion_refund_needed: Some(false),
             }]),
@@ -2073,8 +2072,8 @@ pub async fn test_conversion_refund_needed_filtering(storage: Box<dyn Storage>) 
 
     // Test filter for all payments regardless of transfer refund info
     let all_payments_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Spark {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Spark {
                 htlc_status: None,
                 conversion_refund_needed: None,
             }]),
@@ -2155,8 +2154,8 @@ pub async fn test_token_transaction_type_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by transaction type
     let transfer_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Token {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Token {
                 tx_type: Some(TokenTransactionType::Transfer),
                 tx_hash: None,
                 conversion_refund_needed: None,
@@ -2171,8 +2170,8 @@ pub async fn test_token_transaction_type_filtering(storage: Box<dyn Storage>) {
     // Test filter by mint transaction type
 
     let mint_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Token {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Token {
                 tx_type: Some(TokenTransactionType::Mint),
                 tx_hash: None,
                 conversion_refund_needed: None,
@@ -2186,8 +2185,8 @@ pub async fn test_token_transaction_type_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by burn transaction type
     let burn_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Token {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Token {
                 tx_type: Some(TokenTransactionType::Burn),
                 tx_hash: None,
                 conversion_refund_needed: None,
@@ -2256,7 +2255,7 @@ pub async fn test_timestamp_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by from_timestamp
     let from_2000 = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             from_timestamp: Some(2000),
             ..Default::default()
         })
@@ -2268,7 +2267,7 @@ pub async fn test_timestamp_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by to_timestamp
     let to_2000 = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             to_timestamp: Some(2000),
             ..Default::default()
         })
@@ -2279,7 +2278,7 @@ pub async fn test_timestamp_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by both from_timestamp and to_timestamp
     let range = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             from_timestamp: Some(1500),
             to_timestamp: Some(2500),
             ..Default::default()
@@ -2354,7 +2353,7 @@ pub async fn test_combined_filters(storage: Box<dyn Storage>) {
 
     // Test: Send + Completed
     let send_completed = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             type_filter: Some(vec![PaymentType::Send]),
             status_filter: Some(vec![PaymentStatus::Completed]),
             ..Default::default()
@@ -2366,7 +2365,7 @@ pub async fn test_combined_filters(storage: Box<dyn Storage>) {
 
     // Test: Bitcoin + timestamp range
     let bitcoin_recent = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             asset_filter: Some(crate::AssetFilter::Bitcoin),
             from_timestamp: Some(2500),
             ..Default::default()
@@ -2378,7 +2377,7 @@ pub async fn test_combined_filters(storage: Box<dyn Storage>) {
 
     // Test: Type + Status + Asset
     let send_pending_bitcoin = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             type_filter: Some(vec![PaymentType::Send]),
             status_filter: Some(vec![PaymentStatus::Pending]),
             asset_filter: Some(crate::AssetFilter::Bitcoin),
@@ -2446,7 +2445,7 @@ pub async fn test_sort_order(storage: Box<dyn Storage>) {
 
     // Test default sort (descending by timestamp)
     let desc_payments = storage
-        .list_payments(ListPaymentsRequest::default())
+        .list_payments(StorageListPaymentsRequest::default())
         .await
         .unwrap();
     assert_eq!(desc_payments.len(), 3);
@@ -2456,7 +2455,7 @@ pub async fn test_sort_order(storage: Box<dyn Storage>) {
 
     // Test ascending sort
     let asc_payments = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             sort_ascending: Some(true),
             ..Default::default()
         })
@@ -2469,7 +2468,7 @@ pub async fn test_sort_order(storage: Box<dyn Storage>) {
 
     // Test explicit descending sort
     let desc_explicit = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             sort_ascending: Some(false),
             ..Default::default()
         })
@@ -2848,8 +2847,8 @@ pub async fn test_lightning_htlc_details_and_status_filtering(storage: Box<dyn S
 
     // Filter: htlc_status = WaitingForPreimage → only WaitingForPreimage Lightning payments
     let waiting = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Lightning {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Lightning {
                 htlc_status: Some(vec![SparkHtlcStatus::WaitingForPreimage]),
                 has_lnurl_preimage: None,
             }]),
@@ -2862,8 +2861,8 @@ pub async fn test_lightning_htlc_details_and_status_filtering(storage: Box<dyn S
 
     // Filter: htlc_status = PreimageShared → PreimageShared Lightning payments
     let claimed = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Lightning {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Lightning {
                 htlc_status: Some(vec![SparkHtlcStatus::PreimageShared]),
                 has_lnurl_preimage: None,
             }]),
@@ -2877,8 +2876,8 @@ pub async fn test_lightning_htlc_details_and_status_filtering(storage: Box<dyn S
 
     // Filter: htlc_status = [WaitingForPreimage, PreimageShared] → all Lightning payments
     let all_htlc = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Lightning {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Lightning {
                 htlc_status: Some(vec![
                     SparkHtlcStatus::WaitingForPreimage,
                     SparkHtlcStatus::PreimageShared,
@@ -2895,7 +2894,7 @@ pub async fn test_lightning_htlc_details_and_status_filtering(storage: Box<dyn S
     assert!(all_htlc.iter().any(|p| p.id == "regular_ln"));
 }
 
-/// Test that `list_payments` with `PaymentDetailsFilter::Lightning { has_lnurl_preimage: Some(false) }`
+/// Test that `list_payments` with `StoragePaymentDetailsFilter::Lightning { has_lnurl_preimage: Some(false) }`
 /// returns only payments that:
 /// - Are completed receive Lightning payments
 /// - Have a preimage in the payment details
@@ -3152,10 +3151,10 @@ pub async fn test_pending_lnurl_preimages(storage: Box<dyn Storage>) {
 
     // Get pending LNURL preimages via list_payments with Lightning filter
     let pending = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             type_filter: Some(vec![PaymentType::Receive]),
             status_filter: Some(vec![PaymentStatus::Completed]),
-            payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
+            payment_details_filter: Some(vec![StoragePaymentDetailsFilter::Lightning {
                 htlc_status: None,
                 has_lnurl_preimage: Some(false),
             }]),
@@ -3216,10 +3215,10 @@ pub async fn test_pending_lnurl_preimages(storage: Box<dyn Storage>) {
 
     // Should now return empty
     let pending_after = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             type_filter: Some(vec![PaymentType::Receive]),
             status_filter: Some(vec![PaymentStatus::Completed]),
-            payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
+            payment_details_filter: Some(vec![StoragePaymentDetailsFilter::Lightning {
                 htlc_status: None,
                 has_lnurl_preimage: Some(false),
             }]),

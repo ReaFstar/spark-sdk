@@ -16,11 +16,13 @@ use tokio_postgres_rustls::MakeRustlsConnect;
 use webpki_roots::TLS_SERVER_ROOTS;
 
 use crate::{
-    AssetFilter, ConversionInfo, DepositInfo, ListPaymentsRequest, LnurlPayInfo,
-    LnurlReceiveMetadata, LnurlWithdrawInfo, PaymentDetails, PaymentDetailsFilter, PaymentMethod,
-    SparkHtlcDetails, SparkHtlcStatus,
+    AssetFilter, ConversionInfo, DepositInfo, LnurlPayInfo, LnurlReceiveMetadata,
+    LnurlWithdrawInfo, PaymentDetails, PaymentMethod, SparkHtlcDetails, SparkHtlcStatus,
     error::DepositClaimError,
-    persist::{PaymentMetadata, SetLnurlMetadataItem, UpdateDepositPayload},
+    persist::{
+        PaymentMetadata, SetLnurlMetadataItem, StorageListPaymentsRequest,
+        StoragePaymentDetailsFilter, UpdateDepositPayload,
+    },
     sync_storage::{
         IncomingChange, OutgoingChange, Record, RecordChange, RecordId, UnversionedRecordChange,
     },
@@ -786,7 +788,7 @@ impl Storage for PostgresStorage {
     #[allow(clippy::too_many_lines, clippy::arithmetic_side_effects)]
     async fn list_payments(
         &self,
-        request: ListPaymentsRequest,
+        request: StorageListPaymentsRequest,
     ) -> Result<Vec<Payment>, StorageError> {
         let client = self.pool.get().await.map_err(map_pool_error)?;
 
@@ -869,11 +871,11 @@ impl Storage for PostgresStorage {
                 let mut payment_details_clauses = Vec::new();
                 // Filter by HTLC status (Spark or Lightning)
                 let htlc_filter = match payment_details_filter {
-                    PaymentDetailsFilter::Spark {
+                    StoragePaymentDetailsFilter::Spark {
                         htlc_status: Some(s),
                         ..
                     } if !s.is_empty() => Some(("s", s)),
-                    PaymentDetailsFilter::Lightning {
+                    StoragePaymentDetailsFilter::Lightning {
                         htlc_status: Some(s),
                         ..
                     } if !s.is_empty() => Some(("l", s)),
@@ -905,11 +907,11 @@ impl Storage for PostgresStorage {
                 }
                 // Filter by conversion info presence
                 let conversion_filter = match payment_details_filter {
-                    PaymentDetailsFilter::Spark {
+                    StoragePaymentDetailsFilter::Spark {
                         conversion_refund_needed: Some(v),
                         ..
                     } => Some((v, "p.spark = true")),
-                    PaymentDetailsFilter::Token {
+                    StoragePaymentDetailsFilter::Token {
                         conversion_refund_needed: Some(v),
                         ..
                     } => Some((v, "p.spark IS NULL")),
@@ -927,7 +929,7 @@ impl Storage for PostgresStorage {
                     ));
                 }
                 // Filter by token transaction hash
-                if let PaymentDetailsFilter::Token {
+                if let StoragePaymentDetailsFilter::Token {
                     tx_hash: Some(tx_hash),
                     ..
                 } = payment_details_filter
@@ -937,7 +939,7 @@ impl Storage for PostgresStorage {
                     params.push(Box::new(tx_hash.clone()));
                 }
                 // Filter by token transaction type
-                if let PaymentDetailsFilter::Token {
+                if let StoragePaymentDetailsFilter::Token {
                     tx_type: Some(tx_type),
                     ..
                 } = payment_details_filter
@@ -948,7 +950,7 @@ impl Storage for PostgresStorage {
                 }
 
                 // Filter by LNURL preimage status
-                if let PaymentDetailsFilter::Lightning {
+                if let StoragePaymentDetailsFilter::Lightning {
                     has_lnurl_preimage: Some(has_preimage),
                     ..
                 } = payment_details_filter
@@ -2171,7 +2173,8 @@ mod tests {
     #[allow(clippy::too_many_lines)]
     async fn test_migration_htlc_details() {
         use crate::{
-            ListPaymentsRequest, PaymentDetails, PaymentDetailsFilter, SparkHtlcStatus, Storage,
+            PaymentDetails, SparkHtlcStatus, Storage,
+            persist::{StorageListPaymentsRequest, StoragePaymentDetailsFilter},
         };
 
         // Start a PostgreSQL container
@@ -2378,8 +2381,8 @@ mod tests {
 
         // Step 7: Verify filtering by htlc_status works on migrated data
         let waiting_payments = storage
-            .list_payments(ListPaymentsRequest {
-                payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
+            .list_payments(StorageListPaymentsRequest {
+                payment_details_filter: Some(vec![StoragePaymentDetailsFilter::Lightning {
                     htlc_status: Some(vec![SparkHtlcStatus::WaitingForPreimage]),
                     has_lnurl_preimage: None,
                 }]),
@@ -2391,8 +2394,8 @@ mod tests {
         assert_eq!(waiting_payments[0].id, "ln-pending");
 
         let preimage_shared = storage
-            .list_payments(ListPaymentsRequest {
-                payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
+            .list_payments(StorageListPaymentsRequest {
+                payment_details_filter: Some(vec![StoragePaymentDetailsFilter::Lightning {
                     htlc_status: Some(vec![SparkHtlcStatus::PreimageShared]),
                     has_lnurl_preimage: None,
                 }]),
@@ -2404,8 +2407,8 @@ mod tests {
         assert_eq!(preimage_shared[0].id, "ln-completed");
 
         let returned = storage
-            .list_payments(ListPaymentsRequest {
-                payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
+            .list_payments(StorageListPaymentsRequest {
+                payment_details_filter: Some(vec![StoragePaymentDetailsFilter::Lightning {
                     htlc_status: Some(vec![SparkHtlcStatus::Returned]),
                     has_lnurl_preimage: None,
                 }]),

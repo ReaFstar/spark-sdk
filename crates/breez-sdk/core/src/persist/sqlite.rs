@@ -8,11 +8,14 @@ use rusqlite::{
 use rusqlite_migration::{M, Migrations, SchemaVersion};
 
 use crate::{
-    AssetFilter, ConversionInfo, DepositInfo, ListPaymentsRequest, LnurlPayInfo,
-    LnurlReceiveMetadata, LnurlWithdrawInfo, PaymentDetails, PaymentDetailsFilter, PaymentMethod,
-    SparkHtlcDetails, SparkHtlcStatus, TokenTransactionType,
+    AssetFilter, ConversionInfo, DepositInfo, LnurlPayInfo, LnurlReceiveMetadata,
+    LnurlWithdrawInfo, PaymentDetails, PaymentMethod, SparkHtlcDetails, SparkHtlcStatus,
+    TokenTransactionType,
     error::DepositClaimError,
-    persist::{PaymentMetadata, SetLnurlMetadataItem, UpdateDepositPayload},
+    persist::{
+        PaymentMetadata, SetLnurlMetadataItem, StorageListPaymentsRequest,
+        StoragePaymentDetailsFilter, UpdateDepositPayload,
+    },
     sync_storage::{
         IncomingChange, OutgoingChange, Record, RecordChange, RecordId, UnversionedRecordChange,
     },
@@ -343,7 +346,7 @@ impl Storage for SqliteStorage {
     #[allow(clippy::too_many_lines)]
     async fn list_payments(
         &self,
-        request: ListPaymentsRequest,
+        request: StorageListPaymentsRequest,
     ) -> Result<Vec<Payment>, StorageError> {
         let connection = self.get_connection()?;
 
@@ -417,11 +420,11 @@ impl Storage for SqliteStorage {
                 let mut payment_details_clauses = Vec::new();
                 // Filter by HTLC status (Spark or Lightning)
                 let htlc_filter = match payment_details_filter {
-                    PaymentDetailsFilter::Spark {
+                    StoragePaymentDetailsFilter::Spark {
                         htlc_status: Some(s),
                         ..
                     } if !s.is_empty() => Some(("s", s)),
-                    PaymentDetailsFilter::Lightning {
+                    StoragePaymentDetailsFilter::Lightning {
                         htlc_status: Some(s),
                         ..
                     } if !s.is_empty() => Some(("l", s)),
@@ -448,11 +451,11 @@ impl Storage for SqliteStorage {
                 }
                 // Filter by conversion info presence
                 let conversion_filter = match payment_details_filter {
-                    PaymentDetailsFilter::Spark {
+                    StoragePaymentDetailsFilter::Spark {
                         conversion_refund_needed: Some(v),
                         ..
                     } => Some((v, "p.spark = 1")),
-                    PaymentDetailsFilter::Token {
+                    StoragePaymentDetailsFilter::Token {
                         conversion_refund_needed: Some(v),
                         ..
                     } => Some((v, "p.spark IS NULL")),
@@ -470,7 +473,7 @@ impl Storage for SqliteStorage {
                     ));
                 }
                 // Filter by token transaction hash
-                if let PaymentDetailsFilter::Token {
+                if let StoragePaymentDetailsFilter::Token {
                     tx_hash: Some(tx_hash),
                     ..
                 } = payment_details_filter
@@ -480,7 +483,7 @@ impl Storage for SqliteStorage {
                 }
 
                 // Filter by token transaction type
-                if let PaymentDetailsFilter::Token {
+                if let StoragePaymentDetailsFilter::Token {
                     tx_type: Some(tx_type),
                     ..
                 } = payment_details_filter
@@ -490,7 +493,7 @@ impl Storage for SqliteStorage {
                 }
 
                 // Filter by LNURL preimage status
-                if let PaymentDetailsFilter::Lightning {
+                if let StoragePaymentDetailsFilter::Lightning {
                     has_lnurl_preimage: Some(has_preimage),
                     ..
                 } = payment_details_filter
@@ -1750,8 +1753,9 @@ mod tests {
     #[allow(clippy::too_many_lines)]
     async fn test_migration_tx_type() {
         use crate::{
-            ListPaymentsRequest, Payment, PaymentDetails, PaymentDetailsFilter, PaymentMethod,
-            PaymentStatus, PaymentType, Storage, TokenMetadata, TokenTransactionType,
+            Payment, PaymentDetails, PaymentMethod, PaymentStatus, PaymentType, Storage,
+            TokenMetadata, TokenTransactionType,
+            persist::{StorageListPaymentsRequest, StoragePaymentDetailsFilter},
         };
         use rusqlite::{Connection, params};
         use rusqlite_migration::{M, Migrations};
@@ -1883,7 +1887,7 @@ mod tests {
         storage.insert_payment(new_payment).await.unwrap();
 
         // Step 6: List all payments
-        let request = ListPaymentsRequest {
+        let request = StorageListPaymentsRequest {
             type_filter: None,
             status_filter: None,
             asset_filter: None,
@@ -1923,11 +1927,11 @@ mod tests {
         }
 
         // Step 7: Test filtering by token transaction type
-        let transfer_filter = ListPaymentsRequest {
+        let transfer_filter = StorageListPaymentsRequest {
             type_filter: None,
             status_filter: None,
             asset_filter: None,
-            payment_details_filter: Some(vec![PaymentDetailsFilter::Token {
+            payment_details_filter: Some(vec![StoragePaymentDetailsFilter::Token {
                 conversion_refund_needed: None,
                 tx_hash: None,
                 tx_type: Some(TokenTransactionType::Transfer),
@@ -1952,7 +1956,8 @@ mod tests {
     #[allow(clippy::too_many_lines)]
     async fn test_migration_htlc_details() {
         use crate::{
-            ListPaymentsRequest, PaymentDetails, PaymentDetailsFilter, SparkHtlcStatus, Storage,
+            PaymentDetails, SparkHtlcStatus, Storage,
+            persist::{StorageListPaymentsRequest, StoragePaymentDetailsFilter},
         };
         use rusqlite::{Connection, params};
         use rusqlite_migration::{M, Migrations};
@@ -2115,8 +2120,8 @@ mod tests {
 
         // Step 7: Verify filtering by htlc_status works on migrated data
         let waiting_payments = storage
-            .list_payments(ListPaymentsRequest {
-                payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
+            .list_payments(StorageListPaymentsRequest {
+                payment_details_filter: Some(vec![StoragePaymentDetailsFilter::Lightning {
                     htlc_status: Some(vec![SparkHtlcStatus::WaitingForPreimage]),
                     has_lnurl_preimage: None,
                 }]),
@@ -2128,8 +2133,8 @@ mod tests {
         assert_eq!(waiting_payments[0].id, "ln-pending");
 
         let preimage_shared = storage
-            .list_payments(ListPaymentsRequest {
-                payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
+            .list_payments(StorageListPaymentsRequest {
+                payment_details_filter: Some(vec![StoragePaymentDetailsFilter::Lightning {
                     htlc_status: Some(vec![SparkHtlcStatus::PreimageShared]),
                     has_lnurl_preimage: None,
                 }]),
@@ -2141,8 +2146,8 @@ mod tests {
         assert_eq!(preimage_shared[0].id, "ln-completed");
 
         let returned = storage
-            .list_payments(ListPaymentsRequest {
-                payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
+            .list_payments(StorageListPaymentsRequest {
+                payment_details_filter: Some(vec![StoragePaymentDetailsFilter::Lightning {
                     htlc_status: Some(vec![SparkHtlcStatus::Returned]),
                     has_lnurl_preimage: None,
                 }]),

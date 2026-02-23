@@ -217,7 +217,7 @@ async fn test_migration_from_v2_to_v3() {
         .expect("Failed to insert new payment");
 
     // Step 5: List all payments to verify both work
-    let request = breez_sdk_spark::ListPaymentsRequest {
+    let request = breez_sdk_spark::StorageListPaymentsRequest {
         type_filter: None,
         status_filter: None,
         asset_filter: None,
@@ -349,7 +349,7 @@ async fn test_migration_from_v8_to_v9() {
         .expect("Failed to insert new token payment");
 
     // Step 6: List all token payments to verify both work
-    let request = breez_sdk_spark::ListPaymentsRequest {
+    let request = breez_sdk_spark::StorageListPaymentsRequest {
         type_filter: None,
         status_filter: None,
         asset_filter: None,
@@ -396,11 +396,11 @@ async fn test_migration_from_v8_to_v9() {
     }
 
     // Step 7: Test filtering by token transaction type
-    let transfer_filter_request = breez_sdk_spark::ListPaymentsRequest {
+    let transfer_filter_request = breez_sdk_spark::StorageListPaymentsRequest {
         type_filter: None,
         status_filter: None,
         asset_filter: None,
-        payment_details_filter: Some(vec![breez_sdk_spark::PaymentDetailsFilter::Token {
+        payment_details_filter: Some(vec![breez_sdk_spark::StoragePaymentDetailsFilter::Token {
             conversion_refund_needed: None,
             tx_hash: None,
             tx_type: Some(breez_sdk_spark::TokenTransactionType::Transfer),
@@ -496,11 +496,13 @@ async fn test_migration_from_v10_to_v11() {
     // Step 6: Verify filtering by htlc_status works on migrated data
     let waiting_payments = breez_sdk_spark::Storage::list_payments(
         &storage,
-        breez_sdk_spark::ListPaymentsRequest {
-            payment_details_filter: Some(vec![breez_sdk_spark::PaymentDetailsFilter::Lightning {
-                htlc_status: Some(vec![breez_sdk_spark::SparkHtlcStatus::WaitingForPreimage]),
-                has_lnurl_preimage: None,
-            }]),
+        breez_sdk_spark::StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![
+                breez_sdk_spark::StoragePaymentDetailsFilter::Lightning {
+                    htlc_status: Some(vec![breez_sdk_spark::SparkHtlcStatus::WaitingForPreimage]),
+                    has_lnurl_preimage: None,
+                },
+            ]),
             ..Default::default()
         },
     )
@@ -511,11 +513,13 @@ async fn test_migration_from_v10_to_v11() {
 
     let preimage_shared = breez_sdk_spark::Storage::list_payments(
         &storage,
-        breez_sdk_spark::ListPaymentsRequest {
-            payment_details_filter: Some(vec![breez_sdk_spark::PaymentDetailsFilter::Lightning {
-                htlc_status: Some(vec![breez_sdk_spark::SparkHtlcStatus::PreimageShared]),
-                has_lnurl_preimage: None,
-            }]),
+        breez_sdk_spark::StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![
+                breez_sdk_spark::StoragePaymentDetailsFilter::Lightning {
+                    htlc_status: Some(vec![breez_sdk_spark::SparkHtlcStatus::PreimageShared]),
+                    has_lnurl_preimage: None,
+                },
+            ]),
             ..Default::default()
         },
     )
@@ -526,11 +530,13 @@ async fn test_migration_from_v10_to_v11() {
 
     let returned = breez_sdk_spark::Storage::list_payments(
         &storage,
-        breez_sdk_spark::ListPaymentsRequest {
-            payment_details_filter: Some(vec![breez_sdk_spark::PaymentDetailsFilter::Lightning {
-                htlc_status: Some(vec![breez_sdk_spark::SparkHtlcStatus::Returned]),
-                has_lnurl_preimage: None,
-            }]),
+        breez_sdk_spark::StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![
+                breez_sdk_spark::StoragePaymentDetailsFilter::Lightning {
+                    htlc_status: Some(vec![breez_sdk_spark::SparkHtlcStatus::Returned]),
+                    has_lnurl_preimage: None,
+                },
+            ]),
             ..Default::default()
         },
     )

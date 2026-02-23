@@ -14,8 +14,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    ConversionInfo, DepositClaimError, DepositInfo, LightningAddressInfo, ListPaymentsRequest,
-    LnurlPayInfo, LnurlWithdrawInfo, TokenBalance, TokenMetadata,
+    AssetFilter, ConversionInfo, DepositClaimError, DepositInfo, LightningAddressInfo,
+    ListPaymentsRequest, LnurlPayInfo, LnurlWithdrawInfo, PaymentDetailsFilter, PaymentStatus,
+    PaymentType, SparkHtlcStatus, TokenBalance, TokenMetadata, TokenTransactionType,
     models::Payment,
     sync_storage::{IncomingChange, OutgoingChange, Record, UnversionedRecordChange},
 };
@@ -95,6 +96,143 @@ impl From<std::num::TryFromIntError> for StorageError {
     }
 }
 
+/// Storage-internal variant of [`PaymentDetailsFilter`] that includes the
+/// `has_lnurl_preimage` field on the `Lightning` variant, which is not exposed
+/// in the public API.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum StoragePaymentDetailsFilter {
+    Spark {
+        htlc_status: Option<Vec<SparkHtlcStatus>>,
+        conversion_refund_needed: Option<bool>,
+    },
+    Token {
+        conversion_refund_needed: Option<bool>,
+        tx_hash: Option<String>,
+        tx_type: Option<TokenTransactionType>,
+    },
+    Lightning {
+        htlc_status: Option<Vec<SparkHtlcStatus>>,
+        has_lnurl_preimage: Option<bool>,
+    },
+}
+
+impl From<PaymentDetailsFilter> for StoragePaymentDetailsFilter {
+    fn from(filter: PaymentDetailsFilter) -> Self {
+        match filter {
+            PaymentDetailsFilter::Spark {
+                htlc_status,
+                conversion_refund_needed,
+            } => StoragePaymentDetailsFilter::Spark {
+                htlc_status,
+                conversion_refund_needed,
+            },
+            PaymentDetailsFilter::Token {
+                conversion_refund_needed,
+                tx_hash,
+                tx_type,
+            } => StoragePaymentDetailsFilter::Token {
+                conversion_refund_needed,
+                tx_hash,
+                tx_type,
+            },
+            PaymentDetailsFilter::Lightning { htlc_status } => {
+                StoragePaymentDetailsFilter::Lightning {
+                    htlc_status,
+                    has_lnurl_preimage: None,
+                }
+            }
+        }
+    }
+}
+
+impl From<StoragePaymentDetailsFilter> for PaymentDetailsFilter {
+    fn from(filter: StoragePaymentDetailsFilter) -> Self {
+        match filter {
+            StoragePaymentDetailsFilter::Spark {
+                htlc_status,
+                conversion_refund_needed,
+            } => PaymentDetailsFilter::Spark {
+                htlc_status,
+                conversion_refund_needed,
+            },
+            StoragePaymentDetailsFilter::Token {
+                conversion_refund_needed,
+                tx_hash,
+                tx_type,
+            } => PaymentDetailsFilter::Token {
+                conversion_refund_needed,
+                tx_hash,
+                tx_type,
+            },
+            StoragePaymentDetailsFilter::Lightning { htlc_status, .. } => {
+                PaymentDetailsFilter::Lightning { htlc_status }
+            }
+        }
+    }
+}
+
+/// Storage-internal variant of [`ListPaymentsRequest`] that uses
+/// [`StoragePaymentDetailsFilter`] instead of the public [`PaymentDetailsFilter`].
+#[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct StorageListPaymentsRequest {
+    #[cfg_attr(feature = "uniffi", uniffi(default=None))]
+    pub type_filter: Option<Vec<PaymentType>>,
+    #[cfg_attr(feature = "uniffi", uniffi(default=None))]
+    pub status_filter: Option<Vec<PaymentStatus>>,
+    #[cfg_attr(feature = "uniffi", uniffi(default=None))]
+    pub asset_filter: Option<AssetFilter>,
+    #[cfg_attr(feature = "uniffi", uniffi(default=None))]
+    pub payment_details_filter: Option<Vec<StoragePaymentDetailsFilter>>,
+    #[cfg_attr(feature = "uniffi", uniffi(default=None))]
+    pub from_timestamp: Option<u64>,
+    #[cfg_attr(feature = "uniffi", uniffi(default=None))]
+    pub to_timestamp: Option<u64>,
+    #[cfg_attr(feature = "uniffi", uniffi(default=None))]
+    pub offset: Option<u32>,
+    #[cfg_attr(feature = "uniffi", uniffi(default=None))]
+    pub limit: Option<u32>,
+    #[cfg_attr(feature = "uniffi", uniffi(default=None))]
+    pub sort_ascending: Option<bool>,
+}
+
+impl From<ListPaymentsRequest> for StorageListPaymentsRequest {
+    fn from(request: ListPaymentsRequest) -> Self {
+        StorageListPaymentsRequest {
+            type_filter: request.type_filter,
+            status_filter: request.status_filter,
+            asset_filter: request.asset_filter,
+            payment_details_filter: request
+                .payment_details_filter
+                .map(|filters| filters.into_iter().map(Into::into).collect()),
+            from_timestamp: request.from_timestamp,
+            to_timestamp: request.to_timestamp,
+            offset: request.offset,
+            limit: request.limit,
+            sort_ascending: request.sort_ascending,
+        }
+    }
+}
+
+impl From<StorageListPaymentsRequest> for ListPaymentsRequest {
+    fn from(request: StorageListPaymentsRequest) -> Self {
+        ListPaymentsRequest {
+            type_filter: request.type_filter,
+            status_filter: request.status_filter,
+            asset_filter: request.asset_filter,
+            payment_details_filter: request
+                .payment_details_filter
+                .map(|filters| filters.into_iter().map(Into::into).collect()),
+            from_timestamp: request.from_timestamp,
+            to_timestamp: request.to_timestamp,
+            offset: request.offset,
+            limit: request.limit,
+            sort_ascending: request.sort_ascending,
+        }
+    }
+}
+
 /// Metadata associated with a payment that cannot be extracted from the Spark operator.
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -129,7 +267,7 @@ pub trait Storage: Send + Sync {
     /// A vector of payments or a `StorageError`
     async fn list_payments(
         &self,
-        request: ListPaymentsRequest,
+        request: StorageListPaymentsRequest,
     ) -> Result<Vec<Payment>, StorageError>;
 
     /// Inserts a payment into storage
