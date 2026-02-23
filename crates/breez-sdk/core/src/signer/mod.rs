@@ -131,6 +131,5 @@ pub(crate) use adapter::ExternalSignerAdapter;
 pub(crate) use default_external::DefaultExternalSigner;
 pub mod breez;
 pub mod lnurl_auth;
-pub mod nostr;
 pub mod rtsync;
 pub mod spark;

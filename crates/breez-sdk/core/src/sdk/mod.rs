@@ -21,8 +21,8 @@ use tokio_with_wasm::alias as tokio;
 use crate::{
     BitcoinChainService, ExternalInputParser, InputType, Logger, Network, OptimizationConfig,
     error::SdkError, events::EventEmitter, lnurl::LnurlServerClient, logger, models::Config,
-    nostr::NostrClient, persist::Storage, signer::lnurl_auth::LnurlAuthSignerAdapter,
-    stable_balance::StableBalance, token_conversion::TokenConverter,
+    persist::Storage, signer::lnurl_auth::LnurlAuthSignerAdapter, stable_balance::StableBalance,
+    token_conversion::TokenConverter,
 };
 
 #[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
@@ -86,11 +86,10 @@ pub struct BreezSdk {
     pub(crate) shutdown_sender: watch::Sender<()>,
     /// Coordinator for coalescing duplicate sync requests
     pub(crate) sync_coordinator: SyncCoordinator,
-    pub(crate) zap_receipt_trigger: tokio::sync::broadcast::Sender<()>,
+    pub(crate) lnurl_preimage_trigger: tokio::sync::broadcast::Sender<()>,
     pub(crate) initial_synced_watcher: watch::Receiver<bool>,
     pub(crate) external_input_parsers: Vec<ExternalInputParser>,
     pub(crate) spark_private_mode_initialized: Arc<OnceCell<()>>,
-    pub(crate) nostr_client: Arc<NostrClient>,
     pub(crate) token_converter: Arc<dyn TokenConverter>,
     pub(crate) stable_balance: Option<Arc<StableBalance>>,
     pub(crate) buy_bitcoin_provider: Arc<dyn BuyBitcoinProviderApi>,
@@ -107,7 +106,6 @@ pub(crate) struct BreezSdkParams {
     pub shutdown_sender: watch::Sender<()>,
     pub spark_wallet: Arc<SparkWallet>,
     pub event_emitter: Arc<EventEmitter>,
-    pub nostr_client: Arc<NostrClient>,
     pub sync_signing_client: Option<SigningClient>,
     pub buy_bitcoin_provider: Arc<dyn BuyBitcoinProviderApi>,
 }
@@ -197,6 +195,7 @@ pub fn default_config(network: Network) -> Config {
         },
         stable_balance_config: None,
         max_concurrent_claims: 4,
+        lnurl_private_mode_enabled: false,
     }
 }
 

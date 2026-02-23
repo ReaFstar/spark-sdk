@@ -12,13 +12,12 @@ use tokio::{
     sync::{broadcast, watch},
 };
 use tokio_with_wasm::alias as tokio;
-use tracing::{debug, error, info, warn};
+use tracing::{Instrument, debug, error, info, warn};
 use web_time::Duration;
 
 use crate::{
-    ListPaymentsRequest, Network, Payment, PaymentDetails, PaymentDetailsFilter, PaymentMetadata,
-    Storage,
-    persist::ObjectCacheRepository,
+    Network, Payment, PaymentDetails, PaymentMetadata, Storage,
+    persist::{ObjectCacheRepository, StorageListPaymentsRequest, StoragePaymentDetailsFilter},
     token_conversion::{ConversionAmount, DEFAULT_CONVERSION_MAX_SLIPPAGE_BPS},
     utils::token::token_transaction_to_payments,
 };
@@ -97,25 +96,31 @@ impl FlashnetTokenConverter {
         let storage = Arc::clone(&self.storage);
         let flashnet_client = Arc::clone(&self.flashnet_client);
         let mut trigger_receiver = refund_trigger.subscribe();
+        let span = tracing::Span::current();
 
-        tokio::spawn(async move {
-            loop {
-                if let Err(e) = Self::refund_failed_conversions(&storage, &flashnet_client).await {
-                    error!("Failed to refund failed conversions: {e:?}");
-                }
+        tokio::spawn(
+            async move {
+                loop {
+                    if let Err(e) =
+                        Self::refund_failed_conversions(&storage, &flashnet_client).await
+                    {
+                        error!("Failed to refund failed conversions: {e:?}");
+                    }
 
-                select! {
-                    _ = shutdown_receiver.changed() => {
-                        info!("Conversion refunder shutdown signal received");
-                        return;
+                    select! {
+                        _ = shutdown_receiver.changed() => {
+                            info!("Conversion refunder shutdown signal received");
+                            return;
+                        }
+                        _ = trigger_receiver.recv() => {
+                            debug!("Conversion refunder triggered");
+                        }
+                        () = tokio::time::sleep(Duration::from_secs(150)) => {}
                     }
-                    _ = trigger_receiver.recv() => {
-                        debug!("Conversion refunder triggered");
-                    }
-                    () = tokio::time::sleep(Duration::from_secs(150)) => {}
                 }
             }
-        });
+            .instrument(span),
+        );
     }
 
     /// Process all failed conversions needing refunds.
@@ -125,13 +130,13 @@ impl FlashnetTokenConverter {
     ) -> Result<(), ConversionError> {
         debug!("Checking for failed conversions needing refunds");
         let payments = storage
-            .list_payments(ListPaymentsRequest {
+            .list_payments(StorageListPaymentsRequest {
                 payment_details_filter: Some(vec![
-                    PaymentDetailsFilter::Spark {
+                    StoragePaymentDetailsFilter::Spark {
                         htlc_status: None,
                         conversion_refund_needed: Some(true),
                     },
-                    PaymentDetailsFilter::Token {
+                    StoragePaymentDetailsFilter::Token {
                         conversion_refund_needed: Some(true),
                         tx_hash: None,
                         tx_type: None,

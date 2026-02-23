@@ -58,6 +58,15 @@ This configuration option is only relevant when the SDK is initialized for the f
 
 </div>
 
+## LNURL private mode
+
+Controls whether the SDK operates in LNURL private mode. When enabled, the LNURL server won't track invoice payments for this user, disabling:
+
+- **[LUD-21](https://github.com/lnurl/luds/blob/luds/21.md)**: Invoice verification via public endpoint
+- **[NIP-57](https://github.com/nostr-protocol/nips/blob/master/57.md)**: Server-side zap receipt publishing
+
+{{#tabs config:lnurl-private-mode-enabled}}
+
 ## Optimization configuration
 
 The SDK can automatically optimize the Spark leaf set to maximize unilateral exit efficiency or increase payment speed. Fewer, larger leaves allow more funds to be exited unilaterally, while having more leaves enables payments without requiring swaps, improving payment speed.

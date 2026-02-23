@@ -1,17 +1,21 @@
 use breez_sdk_common::lnurl::{self, error::LnurlError, pay::validate_lnurl_pay};
-use tracing::info;
+use tokio_with_wasm::alias as tokio;
+use tracing::{Instrument, debug, error, info};
 
 use crate::{
     FeePolicy, InputType, LnurlAuthRequestDetails, LnurlCallbackStatus, LnurlPayInfo,
     LnurlPayRequest, LnurlPayResponse, LnurlWithdrawInfo, LnurlWithdrawRequest,
-    LnurlWithdrawResponse, PrepareLnurlPayRequest, PrepareLnurlPayResponse, SendPaymentMethod,
-    WaitForPaymentIdentifier,
+    LnurlWithdrawResponse, PaymentDetails, PaymentStatus, PaymentType, PrepareLnurlPayRequest,
+    PrepareLnurlPayResponse, SendPaymentMethod, SetLnurlMetadataItem, WaitForPaymentIdentifier,
     error::SdkError,
     events::SdkEvent,
     models::{
         PrepareSendPaymentResponse, ReceivePaymentMethod, ReceivePaymentRequest, SendPaymentRequest,
     },
-    persist::{ObjectCacheRepository, PaymentMetadata},
+    persist::{
+        ObjectCacheRepository, PaymentMetadata, StorageListPaymentsRequest,
+        StoragePaymentDetailsFilter,
+    },
 };
 use breez_sdk_common::lnurl::withdraw::execute_lnurl_withdraw;
 
@@ -484,5 +488,127 @@ impl BreezSdk {
             conversion_estimate: None,
             fee_policy: FeePolicy::FeesIncluded,
         })
+    }
+
+    /// Background task that publishes lnurl preimages for received lnurl payments for nostr zaps
+    /// and LNURL verify. Triggered on startup and after syncing lnurl metadata.
+    pub(super) fn spawn_lnurl_preimage_publisher(&self) {
+        if self.config.lnurl_private_mode_enabled {
+            debug!("LNURL private mode is enabled. Not enabling LNURL payment status.");
+            return;
+        }
+
+        let sdk = self.clone();
+        let mut shutdown_receiver = sdk.shutdown_sender.subscribe();
+        let mut trigger_receiver = sdk.lnurl_preimage_trigger.clone().subscribe();
+        let span = tracing::Span::current();
+
+        tokio::spawn(
+            async move {
+                if let Err(e) = Self::process_pending_lnurl_preimages(&sdk).await {
+                    error!("Failed to process pending LNURL preimages on startup: {e:?}");
+                }
+
+                loop {
+                    tokio::select! {
+                        _ = shutdown_receiver.changed() => {
+                            info!("LNURL preimage publisher shutdown signal received");
+                            return;
+                        }
+                        _ = trigger_receiver.recv() => {
+                            if let Err(e) = Self::process_pending_lnurl_preimages(&sdk).await {
+                                error!("Failed to process pending LNURL preimages: {e:?}");
+                            }
+                        }
+                    }
+                }
+            }
+            .instrument(span),
+        );
+    }
+
+    async fn process_pending_lnurl_preimages(&self) -> Result<(), SdkError> {
+        let Some(lnurl_server_client) = self.lnurl_server_client.clone() else {
+            return Ok(());
+        };
+
+        let limit = 100;
+        loop {
+            // Query only payments that need their preimage sent to the server
+            let pending = self
+                .storage
+                .list_payments(StorageListPaymentsRequest {
+                    type_filter: Some(vec![PaymentType::Receive]),
+                    status_filter: Some(vec![PaymentStatus::Completed]),
+                    payment_details_filter: Some(vec![StoragePaymentDetailsFilter::Lightning {
+                        htlc_status: None,
+                        has_lnurl_preimage: Some(false),
+                    }]),
+                    limit: Some(limit),
+                    ..Default::default()
+                })
+                .await?;
+
+            debug!("Got {} pending lnurl preimages", pending.len());
+            if pending.is_empty() {
+                break;
+            }
+
+            let len = pending.len();
+
+            for payment in pending {
+                let Some(PaymentDetails::Lightning {
+                    htlc_details,
+                    lnurl_receive_metadata: Some(metadata),
+                    ..
+                }) = payment.details
+                else {
+                    continue;
+                };
+
+                let Some(preimage) = htlc_details.preimage else {
+                    continue;
+                };
+
+                // Notify the LNURL server about the paid invoice
+                if let Err(e) = lnurl_server_client.notify_invoice_paid(&preimage).await {
+                    error!(
+                        "Failed to notify invoice paid for payment_hash {}: {}",
+                        htlc_details.payment_hash, e
+                    );
+                    continue;
+                }
+
+                debug!(
+                    "Notified LNURL server about paid invoice for payment_hash {}",
+                    htlc_details.payment_hash
+                );
+
+                // Update the LNURL metadata to mark the preimage as sent
+                if let Err(e) = self
+                    .storage
+                    .set_lnurl_metadata(vec![SetLnurlMetadataItem {
+                        payment_hash: htlc_details.payment_hash.clone(),
+                        sender_comment: metadata.sender_comment,
+                        nostr_zap_request: metadata.nostr_zap_request,
+                        nostr_zap_receipt: metadata.nostr_zap_receipt,
+                        preimage: Some(preimage),
+                    }])
+                    .await
+                {
+                    error!(
+                        "Failed to update LNURL metadata for payment_hash {}: {}",
+                        htlc_details.payment_hash, e
+                    );
+                }
+            }
+
+            // If we got fewer than the limit, we're done
+            if len < limit as usize {
+                break;
+            }
+        }
+
+        Ok(())
     }
 }

@@ -62,6 +62,7 @@ const SELECT_PAYMENT_SQL = `
            lrm.nostr_zap_request AS lnurl_nostr_zap_request,
            lrm.nostr_zap_receipt AS lnurl_nostr_zap_receipt,
            lrm.sender_comment AS lnurl_sender_comment,
+           lrm.payment_hash AS lnurl_payment_hash,
            pm.parent_payment_id
       FROM payments p
       LEFT JOIN payment_details_lightning l ON p.id = l.payment_id
@@ -258,6 +259,19 @@ class SqliteStorage {
           ) {
             paymentDetailsClauses.push("t.tx_type = ?");
             params.push(paymentDetailsFilter.txType);
+          }
+          // Filter by LNURL preimage status
+          if (
+            paymentDetailsFilter.type === "lightning" &&
+            paymentDetailsFilter.hasLnurlPreimage !== undefined
+          ) {
+            if (paymentDetailsFilter.hasLnurlPreimage) {
+              paymentDetailsClauses.push("lrm.preimage IS NOT NULL");
+            } else {
+              paymentDetailsClauses.push(
+                "lrm.payment_hash IS NOT NULL AND l.preimage IS NOT NULL AND lrm.preimage IS NULL"
+              );
+            }
           }
 
 
@@ -681,7 +695,7 @@ class SqliteStorage {
   setLnurlMetadata(metadata) {
     try {
       const stmt = this.db.prepare(
-        "INSERT OR REPLACE INTO lnurl_receive_metadata (payment_hash, nostr_zap_request, nostr_zap_receipt, sender_comment) VALUES (?, ?, ?, ?)"
+        "INSERT OR REPLACE INTO lnurl_receive_metadata (payment_hash, nostr_zap_request, nostr_zap_receipt, sender_comment, preimage) VALUES (?, ?, ?, ?, ?)"
       );
 
       const transaction = this.db.transaction(() => {
@@ -690,7 +704,8 @@ class SqliteStorage {
             item.paymentHash,
             item.nostrZapRequest || null,
             item.nostrZapReceipt || null,
-            item.senderComment || null
+            item.senderComment || null,
+            item.preimage || null
           );
         }
       });
@@ -749,7 +764,7 @@ class SqliteStorage {
         }
       }
 
-      if (row.lnurl_nostr_zap_request || row.lnurl_sender_comment) {
+      if (row.lnurl_payment_hash) {
         details.lnurlReceiveMetadata = {
           nostrZapRequest: row.lnurl_nostr_zap_request || null,
           nostrZapReceipt: row.lnurl_nostr_zap_receipt || null,

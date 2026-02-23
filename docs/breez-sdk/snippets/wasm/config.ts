@@ -54,9 +54,19 @@ const exampleConfigureStableBalance = async () => {
   console.log('Config:', config)
 }
 
+const exampleConfigureLnurlPrivateModeEnabled = async () => {
+  // ANCHOR: lnurl-private-mode-enabled
+  // Enable LNURL private mode
+  const config = defaultConfig('mainnet')
+  config.lnurlPrivateModeEnabled = true
+  // ANCHOR_END: lnurl-private-mode-enabled
+  console.log('Config:', config)
+}
+
 export {
   exampleConfigureSdk,
   exampleConfigurePrivateEnabledDefault,
   exampleConfigureOptimizationConfiguration,
-  exampleConfigureStableBalance
+  exampleConfigureStableBalance,
+  exampleConfigureLnurlPrivateModeEnabled
 }

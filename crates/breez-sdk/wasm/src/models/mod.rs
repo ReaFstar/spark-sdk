@@ -627,6 +627,7 @@ pub struct Config {
     /// Default is 4. Increase for server environments with high incoming
     /// payment volume to improve throughput.
     pub max_concurrent_claims: u32,
+    pub lnurl_private_mode_enabled: bool,
 }
 
 #[macros::extern_wasm_bindgen(breez_sdk_spark::OptimizationConfig)]
@@ -913,12 +914,42 @@ pub enum PaymentDetailsFilter {
     },
 }
 
+#[macros::extern_wasm_bindgen(breez_sdk_spark::StoragePaymentDetailsFilter)]
+pub enum StoragePaymentDetailsFilter {
+    Spark {
+        htlc_status: Option<Vec<SparkHtlcStatus>>,
+        conversion_refund_needed: Option<bool>,
+    },
+    Token {
+        conversion_refund_needed: Option<bool>,
+        tx_hash: Option<String>,
+        tx_type: Option<TokenTransactionType>,
+    },
+    Lightning {
+        htlc_status: Option<Vec<SparkHtlcStatus>>,
+        has_lnurl_preimage: Option<bool>,
+    },
+}
+
 #[macros::extern_wasm_bindgen(breez_sdk_spark::ListPaymentsRequest)]
 pub struct ListPaymentsRequest {
     pub type_filter: Option<Vec<PaymentType>>,
     pub status_filter: Option<Vec<PaymentStatus>>,
     pub asset_filter: Option<AssetFilter>,
     pub payment_details_filter: Option<Vec<PaymentDetailsFilter>>,
+    pub from_timestamp: Option<u64>,
+    pub to_timestamp: Option<u64>,
+    pub offset: Option<u32>,
+    pub limit: Option<u32>,
+    pub sort_ascending: Option<bool>,
+}
+
+#[macros::extern_wasm_bindgen(breez_sdk_spark::StorageListPaymentsRequest)]
+pub struct StorageListPaymentsRequest {
+    pub type_filter: Option<Vec<PaymentType>>,
+    pub status_filter: Option<Vec<PaymentStatus>>,
+    pub asset_filter: Option<AssetFilter>,
+    pub payment_details_filter: Option<Vec<StoragePaymentDetailsFilter>>,
     pub from_timestamp: Option<u64>,
     pub to_timestamp: Option<u64>,
     pub offset: Option<u32>,
@@ -968,6 +999,7 @@ pub struct SetLnurlMetadataItem {
     pub sender_comment: Option<String>,
     pub nostr_zap_request: Option<String>,
     pub nostr_zap_receipt: Option<String>,
+    pub preimage: Option<String>,
 }
 
 #[macros::extern_wasm_bindgen(breez_sdk_spark::UpdateDepositPayload)]

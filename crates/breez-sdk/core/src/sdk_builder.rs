@@ -24,14 +24,13 @@ use crate::{
     error::SdkError,
     lnurl::{DefaultLnurlServerClient, LnurlServerClient},
     models::Config,
-    nostr::NostrClient,
     payment_observer::{PaymentObserver, SparkTransferObserver},
     persist::Storage,
     realtime_sync::{RealTimeSyncParams, init_and_start_real_time_sync},
     sdk::{BreezSdk, BreezSdkParams},
     signer::{
-        breez::BreezSignerImpl, lnurl_auth::LnurlAuthSignerAdapter, nostr::NostrSigner,
-        rtsync::RTSyncSigner, spark::SparkSigner,
+        breez::BreezSignerImpl, lnurl_auth::LnurlAuthSignerAdapter, rtsync::RTSyncSigner,
+        spark::SparkSigner,
     },
 };
 
@@ -230,32 +229,25 @@ impl SdkBuilder {
         self.config.validate()?;
 
         // Create the base signer based on the signer source
-        let (signer, account_number) = match self.signer_source {
+        let signer: Arc<dyn crate::signer::BreezSigner> = match self.signer_source {
             SignerSource::Seed {
                 seed,
                 key_set_type,
                 use_address_index,
                 account_number,
-            } => {
-                let breez_signer = Arc::new(
-                    BreezSignerImpl::new(
-                        &self.config,
-                        &seed,
-                        key_set_type.into(),
-                        use_address_index,
-                        account_number,
-                    )
-                    .map_err(|e| SdkError::Generic(e.to_string()))?,
-                );
-                (
-                    breez_signer as Arc<dyn crate::signer::BreezSigner>,
+            } => Arc::new(
+                BreezSignerImpl::new(
+                    &self.config,
+                    &seed,
+                    key_set_type.into(),
+                    use_address_index,
                     account_number,
                 )
-            }
+                .map_err(|e| SdkError::Generic(e.to_string()))?,
+            ),
             SignerSource::External(external_signer) => {
                 use crate::signer::ExternalSignerAdapter;
-                let adapter = Arc::new(ExternalSignerAdapter::new(external_signer));
-                (adapter as Arc<dyn crate::signer::BreezSigner>, None)
+                Arc::new(ExternalSignerAdapter::new(external_signer))
             }
         };
 
@@ -264,11 +256,6 @@ impl SdkBuilder {
         let rtsync_signer = Arc::new(
             RTSyncSigner::new(signer.clone(), self.config.network)
                 .map_err(|e| SdkError::Generic(e.to_string()))?,
-        );
-        let nostr_signer = Arc::new(
-            NostrSigner::new(signer.clone(), self.config.network, account_number)
-                .await
-                .map_err(|e| SdkError::Generic(format!("{e:?}")))?,
         );
         let lnurl_auth_signer = Arc::new(LnurlAuthSignerAdapter::new(signer.clone()));
 
@@ -422,8 +409,6 @@ impl SdkBuilder {
                 (storage, None)
             };
 
-        let nostr_client = Arc::new(NostrClient::new(nostr_signer));
-
         // Create the MoonPay provider for buying Bitcoin
         let buy_bitcoin_provider: Arc<dyn BuyBitcoinProviderApi> =
             Arc::new(MoonpayProvider::new(breez_server.clone()));
@@ -440,7 +425,6 @@ impl SdkBuilder {
             shutdown_sender,
             spark_wallet,
             event_emitter,
-            nostr_client,
             sync_signing_client,
             buy_bitcoin_provider,
         })?;

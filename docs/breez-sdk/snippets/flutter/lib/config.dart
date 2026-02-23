@@ -59,3 +59,12 @@ Future<void> configureStableBalance() async {
   // ANCHOR_END: stable-balance-config
   print(config);
 }
+
+Future<void> configureLnurlPrivateModeEnabled() async {
+  // ANCHOR: lnurl-private-mode-enabled
+  // Enable LNURL private mode
+  var config = defaultConfig(network: Network.mainnet)
+      .copyWith(lnurlPrivateModeEnabled: true);
+  // ANCHOR_END: lnurl-private-mode-enabled
+  print(config);
+}

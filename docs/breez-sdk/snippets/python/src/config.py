@@ -57,3 +57,11 @@ async def configure_stable_balance():
     )
     # ANCHOR_END: stable-balance-config
     logging.info(f"Config: {config}")
+
+async def configure_lnurl_private_mode_enabled():
+    # ANCHOR: lnurl-private-mode-enabled
+    # Enable LNURL private mode
+    config = default_config(network=Network.MAINNET)
+    config.lnurl_private_mode_enabled = True
+    # ANCHOR_END: lnurl-private-mode-enabled
+    logging.info(f"Config: {config}")

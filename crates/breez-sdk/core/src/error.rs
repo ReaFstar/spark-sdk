@@ -1,7 +1,6 @@
 use crate::{
     Fee,
     lnurl::LnurlServerError,
-    nostr::NostrError,
     persist::{self},
 };
 use bitcoin::consensus::encode::FromHexError;
@@ -214,19 +213,6 @@ impl From<LnurlServerError> for SdkError {
 impl From<TryInitError> for SdkError {
     fn from(_value: TryInitError) -> Self {
         SdkError::Generic("Logging can only be initialized once".to_string())
-    }
-}
-
-impl From<NostrError> for SdkError {
-    fn from(value: NostrError) -> Self {
-        match value {
-            NostrError::KeyDerivationError(e) => {
-                SdkError::Generic(format!("Nostr key derivation error: {e}"))
-            }
-            NostrError::ZapReceiptCreationError(e) => {
-                SdkError::Generic(format!("Nostr zap receipt creation error: {e}"))
-            }
-        }
     }
 }
 

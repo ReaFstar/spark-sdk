@@ -67,3 +67,12 @@ func ConfigureStableBalance() {
 	// ANCHOR_END: stable-balance-config
 	log.Printf("Config: %+v", config)
 }
+
+func ConfigureLnurlPrivateModeEnabled() {
+	// ANCHOR: lnurl-private-mode-enabled
+	// Enable LNURL private mode
+	config := breez_sdk_spark.DefaultConfig(breez_sdk_spark.NetworkMainnet)
+	config.LnurlPrivateModeEnabled = true
+	// ANCHOR_END: lnurl-private-mode-enabled
+	log.Printf("Config: %+v", config)
+}

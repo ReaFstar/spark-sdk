@@ -56,4 +56,13 @@ class Config {
         // ANCHOR_END: stable-balance-config
         println("Config: $config")
     }
+
+    fun configureLnurlPrivateModeEnabled() {
+        // ANCHOR: lnurl-private-mode-enabled
+        // Enable LNURL private mode
+        val config = defaultConfig(Network.MAINNET)
+        config.lnurlPrivateModeEnabled = true
+        // ANCHOR_END: lnurl-private-mode-enabled
+        println("Config: $config")
+    }
 }

@@ -2,7 +2,7 @@ use spark_wallet::WalletEvent;
 use std::sync::Arc;
 use tokio::sync::watch;
 use tokio_with_wasm::alias as tokio;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{Instrument, debug, error, info, trace, warn};
 use web_time::{Duration, Instant, SystemTime};
 
 use crate::{
@@ -34,6 +34,7 @@ impl BreezSdk {
         let mut last_sync_time = SystemTime::now();
 
         let sync_interval = u64::from(self.config.sync_interval_secs);
+        let span = tracing::Span::current();
         tokio::spawn(async move {
             let balance_watcher =
                 BalanceWatcher::new(sdk.spark_wallet.clone(), sdk.storage.clone());
@@ -96,7 +97,7 @@ impl BreezSdk {
                     }
                 }
             }
-        });
+        }.instrument(span));
     }
 
     pub(super) async fn handle_wallet_event(&self, event: WalletEvent) {
@@ -127,6 +128,12 @@ impl BreezSdk {
                     // Ensure potential lnurl metadata is synced before emitting the event.
                     // Note this is already synced at TransferClaimStarting, but it might not have completed yet, so that could race.
                     self.sync_single_lnurl_metadata(&mut payment).await;
+
+                    // Trigger preimage publisher now that the payment is completed.
+                    // The lnurl metadata was likely already synced during TransferClaimStarting,
+                    // but the payment was still pending at that point so the preimage publisher
+                    // couldn't process it. Now that the payment is completed, re-trigger.
+                    let _ = self.lnurl_preimage_trigger.send(());
 
                     self.event_emitter
                         .emit(&SdkEvent::PaymentSucceeded { payment })
@@ -511,7 +518,7 @@ impl BreezSdk {
                 .save_lnurl_metadata_updated_after(updated_after)
                 .await?;
 
-            let _ = self.zap_receipt_trigger.send(());
+            let _ = self.lnurl_preimage_trigger.send(());
             if len < SYNC_PAGING_LIMIT {
                 // No more invoices to fetch
                 break;

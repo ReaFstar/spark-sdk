@@ -11,12 +11,13 @@ use breez_sdk_common::sync::{
     SchemaVersion, SyncService,
 };
 use serde_json::Value;
-use tracing::{debug, error, warn};
+use tracing::{Instrument, debug, error, warn};
 
 use crate::{
-    DepositInfo, EventEmitter, ListPaymentsRequest, Payment, PaymentDetails, PaymentMetadata,
-    Storage, StorageError, UpdateDepositPayload,
+    DepositInfo, EventEmitter, Payment, PaymentDetails, PaymentMetadata, Storage, StorageError,
+    UpdateDepositPayload,
     events::InternalSyncedEvent,
+    persist::StorageListPaymentsRequest,
     sync_storage::{IncomingChange, OutgoingChange, Record, UnversionedRecordChange},
 };
 use tokio_with_wasm::alias as tokio;
@@ -108,11 +109,15 @@ impl SyncedStorage {
 
     pub fn initial_setup(self: &Arc<Self>) {
         let clone = Arc::clone(self);
-        tokio::spawn(async move {
-            if let Err(e) = clone.feed_existing_payment_metadata().await {
-                error!("Failed to feed existing payment metadata for sync: {}", e);
+        let span = tracing::Span::current();
+        tokio::spawn(
+            async move {
+                if let Err(e) = clone.feed_existing_payment_metadata().await {
+                    error!("Failed to feed existing payment metadata for sync: {}", e);
+                }
             }
-        });
+            .instrument(span),
+        );
     }
 
     /// Feed existing payment metadata into sync storage. This is really only needed the first time sync is set up,
@@ -128,7 +133,7 @@ impl SyncedStorage {
 
         let payments = self
             .inner
-            .list_payments(ListPaymentsRequest::default())
+            .list_payments(StorageListPaymentsRequest::default())
             .await?;
         for payment in payments {
             let Some(details) = payment.details else {
@@ -269,7 +274,7 @@ impl Storage for SyncedStorage {
     }
     async fn list_payments(
         &self,
-        request: ListPaymentsRequest,
+        request: StorageListPaymentsRequest,
     ) -> Result<Vec<Payment>, StorageError> {
         self.inner.list_payments(request).await
     }

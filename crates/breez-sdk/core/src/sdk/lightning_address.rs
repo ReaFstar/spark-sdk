@@ -111,18 +111,10 @@ impl BreezSdk {
             None => format!("Pay to {}@{}", username, client.domain()),
         };
 
-        // Query settings directly from spark wallet to avoid recursion through get_user_settings()
-        let spark_user_settings = self.spark_wallet.query_wallet_settings().await?;
-        let nostr_pubkey = if spark_user_settings.private_enabled {
-            Some(self.nostr_client.nostr_pubkey())
-        } else {
-            None
-        };
-
         let params = crate::lnurl::RegisterLightningAddressRequest {
             username: username.clone(),
             description: description.clone(),
-            nostr_pubkey,
+            lnurl_private_mode_enabled: self.config.lnurl_private_mode_enabled,
         };
 
         let response = client.register_lightning_address(&params).await?;

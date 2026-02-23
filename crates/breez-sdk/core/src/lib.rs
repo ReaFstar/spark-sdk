@@ -8,7 +8,6 @@ mod issuer;
 mod lnurl;
 mod logger;
 mod models;
-mod nostr;
 mod persist;
 mod realtime_sync;
 mod sdk;
@@ -30,8 +29,8 @@ pub use events::{EventEmitter, EventListener, OptimizationEvent, SdkEvent};
 pub use issuer::*;
 pub use models::*;
 pub use persist::{
-    PaymentMetadata, SetLnurlMetadataItem, Storage, StorageError, UpdateDepositPayload,
-    path::default_storage_path,
+    PaymentMetadata, SetLnurlMetadataItem, Storage, StorageError, StorageListPaymentsRequest,
+    StoragePaymentDetailsFilter, UpdateDepositPayload, path::default_storage_path,
 };
 pub use sdk::{BreezSdk, default_config, get_spark_status, init_logging, parse_input};
 pub use sdk_builder::SdkBuilder;

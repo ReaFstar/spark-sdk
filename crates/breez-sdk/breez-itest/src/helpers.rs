@@ -3,7 +3,7 @@ use bitcoin::hashes::{Hash as _, sha256};
 use breez_sdk_spark::*;
 use rand::RngCore;
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::{Instrument, debug, info};
 
 use crate::SdkInstance;
 use crate::faucet::RegtestFaucet;
@@ -62,6 +62,7 @@ pub async fn build_sdk_with_dir(
     Ok(SdkInstance {
         sdk,
         events: rx,
+        span: tracing::Span::current(),
         temp_dir,
         data_sync_fixture: None,
         lnurl_fixture: None,
@@ -125,6 +126,7 @@ pub async fn build_sdk_with_custom_config(
     Ok(SdkInstance {
         sdk,
         events: rx,
+        span: tracing::Span::current(),
         temp_dir,
         data_sync_fixture: None,
         lnurl_fixture: None,
@@ -179,6 +181,7 @@ pub async fn build_sdk_from_mnemonic(
     Ok(SdkInstance {
         sdk,
         events: rx,
+        span: tracing::Span::current(),
         temp_dir,
         data_sync_fixture: None,
         lnurl_fixture: None,
@@ -241,6 +244,7 @@ pub async fn build_sdk_with_external_signer(
     Ok(SdkInstance {
         sdk,
         events: rx,
+        span: tracing::Span::current(),
         temp_dir,
         data_sync_fixture: None,
         lnurl_fixture: None,
@@ -398,6 +402,13 @@ pub async fn wait_for_token_balance_increase(
 
 /// Ensure SDK has at least the specified balance, funding if necessary
 pub async fn ensure_funded(sdk_instance: &mut SdkInstance, min_balance: u64) -> Result<()> {
+    let span = sdk_instance.span.clone();
+    return ensure_funded_inner(sdk_instance, min_balance)
+        .instrument(span)
+        .await;
+}
+
+async fn ensure_funded_inner(sdk_instance: &mut SdkInstance, min_balance: u64) -> Result<()> {
     sdk_instance.sdk.sync_wallet(SyncWalletRequest {}).await?;
     let info = sdk_instance
         .sdk
@@ -425,6 +436,17 @@ pub async fn ensure_funded(sdk_instance: &mut SdkInstance, min_balance: u64) -> 
 /// # Returns
 /// Tuple of (deposit_address, funding_txid)
 pub async fn receive_and_fund(
+    sdk_instance: &mut SdkInstance,
+    amount_sats: u64,
+    must_be_claimer: bool,
+) -> Result<(String, String)> {
+    let span = sdk_instance.span.clone();
+    return receive_and_fund_inner(sdk_instance, amount_sats, must_be_claimer)
+        .instrument(span)
+        .await;
+}
+
+async fn receive_and_fund_inner(
     sdk_instance: &mut SdkInstance,
     amount_sats: u64,
     must_be_claimer: bool,
@@ -883,6 +905,7 @@ pub async fn build_sdk_with_postgres(
     Ok(SdkInstance {
         sdk,
         events: rx,
+        span: tracing::Span::current(),
         temp_dir: None,
         data_sync_fixture: None,
         lnurl_fixture: None,

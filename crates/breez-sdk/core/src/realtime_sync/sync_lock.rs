@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use breez_sdk_common::sync::{SetLockParams, SigningClient};
 use tokio_with_wasm::alias as tokio;
-use tracing::{debug, warn};
+use tracing::{Instrument, debug, warn};
 
 /// Tracks the number of in-flight lock holders sharing a distributed lock.
 pub(crate) struct LockCounter {
@@ -66,18 +66,22 @@ impl SyncLockGuard {
         if let Some(client) = &signing_client {
             let client = client.clone();
             let name = lock_name.clone();
-            tokio::spawn(async move {
-                if let Err(e) = client
-                    .set_lock(SetLockParams {
-                        lock_name: name,
-                        acquire: true,
-                        exclusive: false,
-                    })
-                    .await
-                {
-                    warn!("Failed to acquire distributed lock: {e:?}");
+            let span = tracing::Span::current();
+            tokio::spawn(
+                async move {
+                    if let Err(e) = client
+                        .set_lock(SetLockParams {
+                            lock_name: name,
+                            acquire: true,
+                            exclusive: false,
+                        })
+                        .await
+                    {
+                        warn!("Failed to acquire distributed lock: {e:?}");
+                    }
                 }
-            });
+                .instrument(span),
+            );
         }
 
         Self {
@@ -130,18 +134,22 @@ impl Drop for SyncLockGuard {
             && let Some(signing_client) = self.signing_client.take()
         {
             let lock_name = self.lock_name.clone();
-            tokio::spawn(async move {
-                if let Err(e) = signing_client
-                    .set_lock(SetLockParams {
-                        lock_name,
-                        acquire: false,
-                        exclusive: false,
-                    })
-                    .await
-                {
-                    warn!("Failed to release distributed lock: {e:?}");
+            let span = tracing::Span::current();
+            tokio::spawn(
+                async move {
+                    if let Err(e) = signing_client
+                        .set_lock(SetLockParams {
+                            lock_name,
+                            acquire: false,
+                            exclusive: false,
+                        })
+                        .await
+                    {
+                        warn!("Failed to release distributed lock: {e:?}");
+                    }
                 }
-            });
+                .instrument(span),
+            );
         }
     }
 }

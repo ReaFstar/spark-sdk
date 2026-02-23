@@ -1,16 +1,10 @@
-<h1 id="lightning-address">
-    <a class="header" href="#lightning-address">Receiving payments using LNURL-Pay and Lightning addresses</a>
-</h1>
+# Receiving payments using LNURL-Pay and Lightning addresses
 
-<h2 id="what-is-lightning-address">
-    <a class="header" href="#what-is-lightning-address">What is a Lightning address?</a>
-</h2>
+## What is a Lightning address?
 
 A Lightning address is a human-readable identifier formatted like an email address (e.g., `user@domain.com`) that can be used to receive Bitcoin payments over the Lightning Network. Behind the scenes, it uses the LNURL-Pay protocol to dynamically generate invoices when someone wants to send a payment to this address.
 
-<h2 id="lnurl-server">
-    <a class="header" href="#lnurl-server">Configuring a custom domain</a>
-</h2>
+## Configuring a custom domain
 
 To use Lightning addresses with the Breez SDK, you first need to supply a domain. There are two options:
 
@@ -38,9 +32,7 @@ This points a subdomain like pay.yourdomain.com to the LNURL server.
 
 We will verify and add it to our list of allowed domains.
 
-<h2 id="configuring-lightning-address">
-    <a class="header" href="#configuring-lightning-address">Configuring Lightning addresses for users</a>
-</h2>
+## Configuring Lightning addresses for users
 
 Configure your domain in the SDK by passing the {{#name lnurl_domain}} parameter in the SDK configuration:
 
@@ -53,58 +45,50 @@ Configure your domain in the SDK by passing the {{#name lnurl_domain}} parameter
 
 The SDK provides several functions to manage Lightning addresses:
 
-<h3 id="checking-availability">
-    <a class="header" href="#checking-availability">Checking address availability</a>
-</h3>
+### Checking address availability
 
 Before registering a Lightning address, you can check if the username is available. In your UI you can use a quick check mark to show the address is available before registering.
 
 {{#tabs lightning_address:check-lightning-address}}
 
-<h3 id="registering-address">
-    <a class="header" href="#registering-address">Registering a Lightning address</a>
-</h3>
+### Registering a Lightning address
 
 Once you've confirmed a username is available, you can register it by passing a username and a description. The username will be used in `username@domain.com`. The description will be included in lnurl metadata and as the invoice description, so this is what the sender will see. The description is optional, and will default to `Pay to username@domain.com`.
 
 {{#tabs lightning_address:register-lightning-address}}
 
-<h3 id="retrieving-address">
-    <a class="header" href="#retrieving-address">Retrieving Lightning address information</a>
-</h3>
+### Retrieving Lightning address information
 
 You can retrieve information about the currently registered Lightning address.
 
 {{#tabs lightning_address:get-lightning-address}}
 
-<h3 id="deleting-address">
-    <a class="header" href="#deleting-address">Deleting a Lightning address</a>
-</h3>
+### Deleting a Lightning address
 
 When a user no longer wants to use the Lightning address, you can delete it.
 
 {{#tabs lightning_address:delete-lightning-address}}
 
-<h2 id="lnurl-metadata">
-    <a class="header" href="#lnurl-metadata">Accessing LNURL payment metadata</a>
-</h2>
+## Accessing LNURL payment metadata
 
 When receiving payments via LNURL-Pay or Lightning addresses, additional metadata may be included with the payment. This metadata is available on the received payment.
 
-<h3 id="sender-comment">
-    <a class="header" href="#sender-comment">Sender comment</a>
-</h3>
+### Sender comment
 
 If the sender includes a comment with their payment (as defined in [LUD-12](https://github.com/lnurl/luds/blob/luds/12.md)), it will be available on the received payment. This is the message that the sender wrote when making the payment.
 
 {{#tabs lightning_address:access-sender-comment}}
 
-<h3 id="nostr-zap">
-    <a class="header" href="#nostr-zap">Nostr Zap request</a>
-</h3>
+### Nostr Zap request
 
 If the payment was sent as a Nostr Zap (as defined in [NIP-57](https://github.com/nostr-protocol/nips/blob/master/57.md)), the received payment will include the zap request event. It carries the signed Nostr event (kind 9734) used to create the zap, and will also include the zap receipt event (kind 9735) once that has been created and published.
 
 {{#tabs lightning_address:access-nostr-zap}}
 
 > **Note:** When used in [private mode](./config.md#private-mode-enabled-by-default), the nostr zap receipt will be published by the SDK when online. When used in public mode, the zap receipt will be published by the LNURL server on your behalf.
+
+### Payment verification (LUD-21)
+
+Payments received through your Lightning address support [LUD-21](https://github.com/lnurl/luds/blob/luds/21.md) invoice verification, allowing third parties to verify payment completion via a public verify URL.
+
+> **Note:** For LUD-21 the LNURL server needs to know whether invoices were paid. This can be disabled for privacy reasons. See [Invoice paid notifications](./config.md#invoice-paid-notifications).

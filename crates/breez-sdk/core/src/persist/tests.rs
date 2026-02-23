@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use chrono::Utc;
 
 use crate::{
-    DepositClaimError, ListPaymentsRequest, LnurlWithdrawInfo, Payment, PaymentDetails,
-    PaymentMetadata, PaymentMethod, PaymentStatus, PaymentType, SparkHtlcDetails, SparkHtlcStatus,
-    Storage, TokenMetadata, TokenTransactionType, UpdateDepositPayload,
-    persist::ObjectCacheRepository,
+    DepositClaimError, LnurlWithdrawInfo, Payment, PaymentDetails, PaymentMetadata, PaymentMethod,
+    PaymentStatus, PaymentType, SparkHtlcDetails, SparkHtlcStatus, Storage, TokenMetadata,
+    TokenTransactionType, UpdateDepositPayload,
+    persist::{ObjectCacheRepository, StorageListPaymentsRequest, StoragePaymentDetailsFilter},
     sync_storage::{Record, RecordId, UnversionedRecordChange},
 };
 
@@ -805,6 +805,9 @@ pub async fn test_storage(storage: Box<dyn Storage>) {
             nostr_zap_request: lnurl_receive_metadata.nostr_zap_request.clone(),
             payment_hash: lnurl_receive_payment_hash.clone(),
             sender_comment: lnurl_receive_metadata.sender_comment.clone(),
+            preimage: Some(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            ),
         }])
         .await
         .unwrap();
@@ -838,7 +841,7 @@ pub async fn test_storage(storage: Box<dyn Storage>) {
         .unwrap();
     // List all payments (excludes child payments with parent_payment_id set)
     let payments = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             offset: Some(0),
             limit: Some(20),
             ..Default::default()
@@ -1099,6 +1102,7 @@ pub async fn test_storage(storage: Box<dyn Storage>) {
             nostr_zap_receipt: Some(
                 r#"{"kind":9735,"content":"zap receipt","tags":[]}"#.to_string(),
             ),
+            preimage: None,
         }])
         .await
         .unwrap();
@@ -1191,12 +1195,14 @@ pub async fn test_storage(storage: Box<dyn Storage>) {
                 sender_comment: Some("Nice work!".to_string()),
                 nostr_zap_request: None,
                 nostr_zap_receipt: None,
+                preimage: None,
             },
             SetLnurlMetadataItem {
                 payment_hash: "zaphash3".to_string(),
                 sender_comment: None,
                 nostr_zap_request: Some(r#"{"kind":9734,"content":"zap3"}"#.to_string()),
                 nostr_zap_receipt: None,
+                preimage: None,
             },
         ])
         .await
@@ -1420,7 +1426,7 @@ pub async fn test_payment_type_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by Send type only
     let send_only = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             type_filter: Some(vec![PaymentType::Send]),
             ..Default::default()
         })
@@ -1431,7 +1437,7 @@ pub async fn test_payment_type_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by Receive type only
     let receive_only = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             type_filter: Some(vec![PaymentType::Receive]),
             ..Default::default()
         })
@@ -1442,7 +1448,7 @@ pub async fn test_payment_type_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by both types
     let both_types = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             type_filter: Some(vec![PaymentType::Send, PaymentType::Receive]),
             ..Default::default()
         })
@@ -1452,7 +1458,7 @@ pub async fn test_payment_type_filtering(storage: Box<dyn Storage>) {
 
     // Test with no filter (should return all)
     let all_payments = storage
-        .list_payments(ListPaymentsRequest::default())
+        .list_payments(StorageListPaymentsRequest::default())
         .await
         .unwrap();
     assert_eq!(all_payments.len(), 2);
@@ -1514,7 +1520,7 @@ pub async fn test_payment_status_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by Completed status only
     let completed_only = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             status_filter: Some(vec![PaymentStatus::Completed]),
             ..Default::default()
         })
@@ -1525,7 +1531,7 @@ pub async fn test_payment_status_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by Pending status only
     let pending_only = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             status_filter: Some(vec![PaymentStatus::Pending]),
             ..Default::default()
         })
@@ -1536,7 +1542,7 @@ pub async fn test_payment_status_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by multiple statuses
     let completed_or_failed = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             status_filter: Some(vec![PaymentStatus::Completed, PaymentStatus::Failed]),
             ..Default::default()
         })
@@ -1648,7 +1654,7 @@ pub async fn test_asset_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by Bitcoin
     let spark_only = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             asset_filter: Some(crate::AssetFilter::Bitcoin),
             ..Default::default()
         })
@@ -1658,7 +1664,7 @@ pub async fn test_asset_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by Token (no identifier)
     let token_only = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             asset_filter: Some(crate::AssetFilter::Token {
                 token_identifier: None,
             }),
@@ -1671,7 +1677,7 @@ pub async fn test_asset_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by Token with specific identifier
     let token_specific = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             asset_filter: Some(crate::AssetFilter::Token {
                 token_identifier: Some("token_id_1".to_string()),
             }),
@@ -1684,7 +1690,7 @@ pub async fn test_asset_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by Token with non-existent identifier
     let token_no_match = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             asset_filter: Some(crate::AssetFilter::Token {
                 token_identifier: Some("nonexistent".to_string()),
             }),
@@ -1789,8 +1795,8 @@ pub async fn test_spark_htlc_status_filtering(storage: Box<dyn Storage>) {
 
     // Test filter for WaitingForPreimage
     let waiting_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Spark {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Spark {
                 htlc_status: Some(vec![SparkHtlcStatus::WaitingForPreimage]),
                 conversion_refund_needed: None,
             }]),
@@ -1803,8 +1809,8 @@ pub async fn test_spark_htlc_status_filtering(storage: Box<dyn Storage>) {
 
     // Test filter for PreimageShared
     let shared_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Spark {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Spark {
                 htlc_status: Some(vec![SparkHtlcStatus::PreimageShared]),
                 conversion_refund_needed: None,
             }]),
@@ -1817,8 +1823,8 @@ pub async fn test_spark_htlc_status_filtering(storage: Box<dyn Storage>) {
 
     // Test filter for Returned
     let returned_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Spark {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Spark {
                 htlc_status: Some(vec![SparkHtlcStatus::Returned]),
                 conversion_refund_needed: None,
             }]),
@@ -1831,8 +1837,8 @@ pub async fn test_spark_htlc_status_filtering(storage: Box<dyn Storage>) {
 
     // Test filter for multiple statuses (WaitingForPreimage and PreimageShared)
     let multiple_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Spark {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Spark {
                 htlc_status: Some(vec![
                     SparkHtlcStatus::WaitingForPreimage,
                     SparkHtlcStatus::PreimageShared,
@@ -1849,8 +1855,8 @@ pub async fn test_spark_htlc_status_filtering(storage: Box<dyn Storage>) {
 
     // Test that non-HTLC payment is not included in any HTLC status filter
     let all_htlc_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Spark {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Spark {
                 htlc_status: Some(vec![
                     SparkHtlcStatus::WaitingForPreimage,
                     SparkHtlcStatus::PreimageShared,
@@ -1983,15 +1989,15 @@ pub async fn test_conversion_refund_needed_filtering(storage: Box<dyn Storage>) 
         .unwrap();
 
     let payments = storage
-        .list_payments(ListPaymentsRequest::default())
+        .list_payments(StorageListPaymentsRequest::default())
         .await
         .unwrap();
     assert_eq!(payments.len(), 3);
 
     // Test filter for payments missing transfer refund info
     let missing_refund_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Spark {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Spark {
                 htlc_status: None,
                 conversion_refund_needed: Some(true),
             }]),
@@ -2004,8 +2010,8 @@ pub async fn test_conversion_refund_needed_filtering(storage: Box<dyn Storage>) 
 
     // Test filter for payments with transfer refund info present
     let present_refund_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Token {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Token {
                 conversion_refund_needed: Some(false),
                 tx_hash: None,
                 tx_type: None,
@@ -2019,13 +2025,13 @@ pub async fn test_conversion_refund_needed_filtering(storage: Box<dyn Storage>) 
 
     // Test multiple payment detail filters
     let multiple_filters = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             payment_details_filter: Some(vec![
-                crate::PaymentDetailsFilter::Spark {
+                crate::StoragePaymentDetailsFilter::Spark {
                     htlc_status: None,
                     conversion_refund_needed: Some(true),
                 },
-                crate::PaymentDetailsFilter::Token {
+                crate::StoragePaymentDetailsFilter::Token {
                     conversion_refund_needed: Some(false),
                     tx_hash: None,
                     tx_type: None,
@@ -2039,8 +2045,8 @@ pub async fn test_conversion_refund_needed_filtering(storage: Box<dyn Storage>) 
 
     // Test filter for token payments missing transfer refund info
     let token_no_refund_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Token {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Token {
                 conversion_refund_needed: Some(true),
                 tx_hash: None,
                 tx_type: None,
@@ -2053,8 +2059,8 @@ pub async fn test_conversion_refund_needed_filtering(storage: Box<dyn Storage>) 
 
     // Test filter for spark payments with transfer refund info present
     let spark_with_refund_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Spark {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Spark {
                 htlc_status: None,
                 conversion_refund_needed: Some(false),
             }]),
@@ -2066,8 +2072,8 @@ pub async fn test_conversion_refund_needed_filtering(storage: Box<dyn Storage>) 
 
     // Test filter for all payments regardless of transfer refund info
     let all_payments_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Spark {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Spark {
                 htlc_status: None,
                 conversion_refund_needed: None,
             }]),
@@ -2148,8 +2154,8 @@ pub async fn test_token_transaction_type_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by transaction type
     let transfer_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Token {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Token {
                 tx_type: Some(TokenTransactionType::Transfer),
                 tx_hash: None,
                 conversion_refund_needed: None,
@@ -2164,8 +2170,8 @@ pub async fn test_token_transaction_type_filtering(storage: Box<dyn Storage>) {
     // Test filter by mint transaction type
 
     let mint_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Token {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Token {
                 tx_type: Some(TokenTransactionType::Mint),
                 tx_hash: None,
                 conversion_refund_needed: None,
@@ -2179,8 +2185,8 @@ pub async fn test_token_transaction_type_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by burn transaction type
     let burn_filter = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Token {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Token {
                 tx_type: Some(TokenTransactionType::Burn),
                 tx_hash: None,
                 conversion_refund_needed: None,
@@ -2249,7 +2255,7 @@ pub async fn test_timestamp_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by from_timestamp
     let from_2000 = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             from_timestamp: Some(2000),
             ..Default::default()
         })
@@ -2261,7 +2267,7 @@ pub async fn test_timestamp_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by to_timestamp
     let to_2000 = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             to_timestamp: Some(2000),
             ..Default::default()
         })
@@ -2272,7 +2278,7 @@ pub async fn test_timestamp_filtering(storage: Box<dyn Storage>) {
 
     // Test filter by both from_timestamp and to_timestamp
     let range = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             from_timestamp: Some(1500),
             to_timestamp: Some(2500),
             ..Default::default()
@@ -2347,7 +2353,7 @@ pub async fn test_combined_filters(storage: Box<dyn Storage>) {
 
     // Test: Send + Completed
     let send_completed = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             type_filter: Some(vec![PaymentType::Send]),
             status_filter: Some(vec![PaymentStatus::Completed]),
             ..Default::default()
@@ -2359,7 +2365,7 @@ pub async fn test_combined_filters(storage: Box<dyn Storage>) {
 
     // Test: Bitcoin + timestamp range
     let bitcoin_recent = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             asset_filter: Some(crate::AssetFilter::Bitcoin),
             from_timestamp: Some(2500),
             ..Default::default()
@@ -2371,7 +2377,7 @@ pub async fn test_combined_filters(storage: Box<dyn Storage>) {
 
     // Test: Type + Status + Asset
     let send_pending_bitcoin = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             type_filter: Some(vec![PaymentType::Send]),
             status_filter: Some(vec![PaymentStatus::Pending]),
             asset_filter: Some(crate::AssetFilter::Bitcoin),
@@ -2439,7 +2445,7 @@ pub async fn test_sort_order(storage: Box<dyn Storage>) {
 
     // Test default sort (descending by timestamp)
     let desc_payments = storage
-        .list_payments(ListPaymentsRequest::default())
+        .list_payments(StorageListPaymentsRequest::default())
         .await
         .unwrap();
     assert_eq!(desc_payments.len(), 3);
@@ -2449,7 +2455,7 @@ pub async fn test_sort_order(storage: Box<dyn Storage>) {
 
     // Test ascending sort
     let asc_payments = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             sort_ascending: Some(true),
             ..Default::default()
         })
@@ -2462,7 +2468,7 @@ pub async fn test_sort_order(storage: Box<dyn Storage>) {
 
     // Test explicit descending sort
     let desc_explicit = storage
-        .list_payments(ListPaymentsRequest {
+        .list_payments(StorageListPaymentsRequest {
             sort_ascending: Some(false),
             ..Default::default()
         })
@@ -2841,9 +2847,10 @@ pub async fn test_lightning_htlc_details_and_status_filtering(storage: Box<dyn S
 
     // Filter: htlc_status = WaitingForPreimage → only WaitingForPreimage Lightning payments
     let waiting = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Lightning {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Lightning {
                 htlc_status: Some(vec![SparkHtlcStatus::WaitingForPreimage]),
+                has_lnurl_preimage: None,
             }]),
             ..Default::default()
         })
@@ -2854,9 +2861,10 @@ pub async fn test_lightning_htlc_details_and_status_filtering(storage: Box<dyn S
 
     // Filter: htlc_status = PreimageShared → PreimageShared Lightning payments
     let claimed = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Lightning {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Lightning {
                 htlc_status: Some(vec![SparkHtlcStatus::PreimageShared]),
+                has_lnurl_preimage: None,
             }]),
             ..Default::default()
         })
@@ -2868,12 +2876,13 @@ pub async fn test_lightning_htlc_details_and_status_filtering(storage: Box<dyn S
 
     // Filter: htlc_status = [WaitingForPreimage, PreimageShared] → all Lightning payments
     let all_htlc = storage
-        .list_payments(ListPaymentsRequest {
-            payment_details_filter: Some(vec![crate::PaymentDetailsFilter::Lightning {
+        .list_payments(StorageListPaymentsRequest {
+            payment_details_filter: Some(vec![crate::StoragePaymentDetailsFilter::Lightning {
                 htlc_status: Some(vec![
                     SparkHtlcStatus::WaitingForPreimage,
                     SparkHtlcStatus::PreimageShared,
                 ]),
+                has_lnurl_preimage: None,
             }]),
             ..Default::default()
         })
@@ -2883,4 +2892,344 @@ pub async fn test_lightning_htlc_details_and_status_filtering(storage: Box<dyn S
     assert!(all_htlc.iter().any(|p| p.id == "htlc_waiting"));
     assert!(all_htlc.iter().any(|p| p.id == "htlc_claimed"));
     assert!(all_htlc.iter().any(|p| p.id == "regular_ln"));
+}
+
+/// Test that `list_payments` with `StoragePaymentDetailsFilter::Lightning { has_lnurl_preimage: Some(false) }`
+/// returns only payments that:
+/// - Are completed receive Lightning payments
+/// - Have a preimage in the payment details
+/// - Have LNURL metadata without a preimage (i.e., preimage not yet sent to server)
+#[allow(clippy::too_many_lines)]
+pub async fn test_pending_lnurl_preimages(storage: Box<dyn Storage>) {
+    use crate::SetLnurlMetadataItem;
+
+    // Payment 1: Completed receive Lightning payment WITH preimage, LNURL metadata WITHOUT preimage
+    // This should be returned by the Lightning filter query
+    let payment_hash_1 =
+        "pendinghash1234567890abcdef1234567890abcdef1234567890abcdef1234".to_string();
+    let preimage_1 =
+        "pendingpreimage1234567890abcdef1234567890abcdef1234567890abcdef12".to_string();
+    let payment_1 = Payment {
+        id: "pending_lnurl_pmt_1".to_string(),
+        payment_type: PaymentType::Receive,
+        status: PaymentStatus::Completed,
+        amount: 50_000,
+        fees: 500,
+        timestamp: 1_700_000_000,
+        method: PaymentMethod::Lightning,
+        details: Some(PaymentDetails::Lightning {
+            description: Some("Pending LNURL preimage test".to_string()),
+            invoice: "lnbc500n1pending1".to_string(),
+            destination_pubkey: "03pendingpubkey1".to_string(),
+            htlc_details: SparkHtlcDetails {
+                payment_hash: payment_hash_1.clone(),
+                preimage: Some(preimage_1.clone()),
+                expiry_time: 1_700_000_000,
+                status: SparkHtlcStatus::PreimageShared,
+            },
+            lnurl_pay_info: None,
+            lnurl_withdraw_info: None,
+            lnurl_receive_metadata: None,
+        }),
+        conversion_details: None,
+    };
+
+    // Payment 2: Completed receive Lightning payment WITH preimage, LNURL metadata WITH preimage
+    // This should NOT be returned (preimage already sent)
+    let payment_hash_2 =
+        "completehash234567890abcdef1234567890abcdef1234567890abcdef1234".to_string();
+    let preimage_2 = "completepreimage234567890abcdef1234567890abcdef1234567890abcdef1".to_string();
+    let payment_2 = Payment {
+        id: "pending_lnurl_pmt_2".to_string(),
+        payment_type: PaymentType::Receive,
+        status: PaymentStatus::Completed,
+        amount: 60_000,
+        fees: 600,
+        timestamp: 1_700_000_001,
+        method: PaymentMethod::Lightning,
+        details: Some(PaymentDetails::Lightning {
+            description: Some("Already sent preimage test".to_string()),
+            invoice: "lnbc600n1complete1".to_string(),
+            destination_pubkey: "03completepubkey2".to_string(),
+            htlc_details: SparkHtlcDetails {
+                payment_hash: payment_hash_2.clone(),
+                preimage: Some(preimage_2.clone()),
+                expiry_time: 1_700_000_001,
+                status: SparkHtlcStatus::PreimageShared,
+            },
+            lnurl_pay_info: None,
+            lnurl_withdraw_info: None,
+            lnurl_receive_metadata: None,
+        }),
+        conversion_details: None,
+    };
+
+    // Payment 3: Completed receive Lightning payment WITHOUT preimage (pending payment)
+    // This should NOT be returned (no preimage in payment details)
+    let payment_hash_3 =
+        "nopreimagehash34567890abcdef1234567890abcdef1234567890abcdef123".to_string();
+    let payment_3 = Payment {
+        id: "pending_lnurl_pmt_3".to_string(),
+        payment_type: PaymentType::Receive,
+        status: PaymentStatus::Completed,
+        amount: 70_000,
+        fees: 700,
+        timestamp: 1_700_000_002,
+        method: PaymentMethod::Lightning,
+        details: Some(PaymentDetails::Lightning {
+            description: Some("No preimage yet test".to_string()),
+            invoice: "lnbc700n1nopreimage1".to_string(),
+            destination_pubkey: "03nopreimagepubkey3".to_string(),
+            htlc_details: SparkHtlcDetails {
+                payment_hash: payment_hash_3.clone(),
+                preimage: None,
+                expiry_time: 1_700_000_002,
+                status: SparkHtlcStatus::WaitingForPreimage,
+            },
+            lnurl_pay_info: None,
+            lnurl_withdraw_info: None,
+            lnurl_receive_metadata: None,
+        }),
+        conversion_details: None,
+    };
+
+    // Payment 4: Completed receive Lightning payment WITH preimage, but NO LNURL metadata
+    // This should NOT be returned (no LNURL metadata)
+    let payment_hash_4 =
+        "nolnurlhash4567890abcdef1234567890abcdef1234567890abcdef12345678".to_string();
+    let preimage_4 = "nolnurlpreimage4567890abcdef1234567890abcdef1234567890abcdef1234".to_string();
+    let payment_4 = Payment {
+        id: "pending_lnurl_pmt_4".to_string(),
+        payment_type: PaymentType::Receive,
+        status: PaymentStatus::Completed,
+        amount: 80_000,
+        fees: 800,
+        timestamp: 1_700_000_003,
+        method: PaymentMethod::Lightning,
+        details: Some(PaymentDetails::Lightning {
+            description: Some("No LNURL metadata test".to_string()),
+            invoice: "lnbc800n1nolnurl1".to_string(),
+            destination_pubkey: "03nolnurlpubkey4".to_string(),
+            htlc_details: SparkHtlcDetails {
+                payment_hash: payment_hash_4,
+                preimage: Some(preimage_4),
+                expiry_time: 1_700_000_003,
+                status: SparkHtlcStatus::PreimageShared,
+            },
+            lnurl_pay_info: None,
+            lnurl_withdraw_info: None,
+            lnurl_receive_metadata: None,
+        }),
+        conversion_details: None,
+    };
+
+    // Payment 5: SEND payment (not receive) - should NOT be returned
+    let payment_hash_5 =
+        "sendhash567890abcdef1234567890abcdef1234567890abcdef1234567890ab".to_string();
+    let preimage_5 = "sendpreimage567890abcdef1234567890abcdef1234567890abcdef1234567".to_string();
+    let payment_5 = Payment {
+        id: "pending_lnurl_pmt_5".to_string(),
+        payment_type: PaymentType::Send,
+        status: PaymentStatus::Completed,
+        amount: 90_000,
+        fees: 900,
+        timestamp: 1_700_000_004,
+        method: PaymentMethod::Lightning,
+        details: Some(PaymentDetails::Lightning {
+            description: Some("Send payment test".to_string()),
+            invoice: "lnbc900n1send1".to_string(),
+            destination_pubkey: "03sendpubkey5".to_string(),
+            htlc_details: SparkHtlcDetails {
+                payment_hash: payment_hash_5.clone(),
+                preimage: Some(preimage_5),
+                expiry_time: 1_700_000_004,
+                status: SparkHtlcStatus::PreimageShared,
+            },
+            lnurl_pay_info: None,
+            lnurl_withdraw_info: None,
+            lnurl_receive_metadata: None,
+        }),
+        conversion_details: None,
+    };
+
+    // Payment 6: Pending (not completed) receive payment - should NOT be returned
+    let payment_hash_6 =
+        "pendinghash67890abcdef1234567890abcdef1234567890abcdef123456789".to_string();
+    let preimage_6 = "pendingpreimage67890abcdef1234567890abcdef1234567890abcdef12345".to_string();
+    let payment_6 = Payment {
+        id: "pending_lnurl_pmt_6".to_string(),
+        payment_type: PaymentType::Receive,
+        status: PaymentStatus::Pending,
+        amount: 100_000,
+        fees: 1000,
+        timestamp: 1_700_000_005,
+        method: PaymentMethod::Lightning,
+        details: Some(PaymentDetails::Lightning {
+            description: Some("Pending status test".to_string()),
+            invoice: "lnbc1000n1pendingstatus1".to_string(),
+            destination_pubkey: "03pendingstatuspubkey6".to_string(),
+            htlc_details: SparkHtlcDetails {
+                payment_hash: payment_hash_6.clone(),
+                preimage: Some(preimage_6),
+                expiry_time: 1_700_000_005,
+                status: SparkHtlcStatus::WaitingForPreimage,
+            },
+            lnurl_pay_info: None,
+            lnurl_withdraw_info: None,
+            lnurl_receive_metadata: None,
+        }),
+        conversion_details: None,
+    };
+
+    // Insert all payments
+    storage.insert_payment(payment_1).await.unwrap();
+    storage.insert_payment(payment_2).await.unwrap();
+    storage.insert_payment(payment_3).await.unwrap();
+    storage.insert_payment(payment_4).await.unwrap();
+    storage.insert_payment(payment_5).await.unwrap();
+    storage.insert_payment(payment_6).await.unwrap();
+
+    // Add LNURL metadata WITHOUT preimage for payment 1 (should be returned)
+    storage
+        .set_lnurl_metadata(vec![SetLnurlMetadataItem {
+            payment_hash: payment_hash_1.clone(),
+            sender_comment: Some("Test comment 1".to_string()),
+            nostr_zap_request: Some(r#"{"kind":9734}"#.to_string()),
+            nostr_zap_receipt: None,
+            preimage: None, // No preimage - should be pending
+        }])
+        .await
+        .unwrap();
+
+    // Add LNURL metadata WITH preimage for payment 2 (should NOT be returned)
+    storage
+        .set_lnurl_metadata(vec![SetLnurlMetadataItem {
+            payment_hash: payment_hash_2.clone(),
+            sender_comment: Some("Test comment 2".to_string()),
+            nostr_zap_request: Some(r#"{"kind":9734}"#.to_string()),
+            nostr_zap_receipt: Some(r#"{"kind":9735}"#.to_string()),
+            preimage: Some(preimage_2.clone()), // Has preimage - already sent
+        }])
+        .await
+        .unwrap();
+
+    // Add LNURL metadata WITHOUT preimage for payment 3 (should NOT be returned - no preimage in payment)
+    storage
+        .set_lnurl_metadata(vec![SetLnurlMetadataItem {
+            payment_hash: payment_hash_3.clone(),
+            sender_comment: Some("Test comment 3".to_string()),
+            nostr_zap_request: None,
+            nostr_zap_receipt: None,
+            preimage: None,
+        }])
+        .await
+        .unwrap();
+
+    // Add LNURL metadata for payment 5 (send payment - should NOT be returned)
+    storage
+        .set_lnurl_metadata(vec![SetLnurlMetadataItem {
+            payment_hash: payment_hash_5,
+            sender_comment: None,
+            nostr_zap_request: None,
+            nostr_zap_receipt: None,
+            preimage: None,
+        }])
+        .await
+        .unwrap();
+
+    // Add LNURL metadata for payment 6 (pending status - should NOT be returned)
+    storage
+        .set_lnurl_metadata(vec![SetLnurlMetadataItem {
+            payment_hash: payment_hash_6,
+            sender_comment: None,
+            nostr_zap_request: None,
+            nostr_zap_receipt: None,
+            preimage: None,
+        }])
+        .await
+        .unwrap();
+
+    // Get pending LNURL preimages via list_payments with Lightning filter
+    let pending = storage
+        .list_payments(StorageListPaymentsRequest {
+            type_filter: Some(vec![PaymentType::Receive]),
+            status_filter: Some(vec![PaymentStatus::Completed]),
+            payment_details_filter: Some(vec![StoragePaymentDetailsFilter::Lightning {
+                htlc_status: None,
+                has_lnurl_preimage: Some(false),
+            }]),
+            limit: Some(100),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    // Should only return payment 1
+    assert_eq!(
+        pending.len(),
+        1,
+        "Expected exactly 1 pending LNURL preimage, got {}",
+        pending.len()
+    );
+
+    let pending_payment = &pending[0];
+    let Some(PaymentDetails::Lightning {
+        htlc_details: ref hd,
+        lnurl_receive_metadata: Some(ref metadata),
+        ..
+    }) = pending_payment.details
+    else {
+        panic!("Expected Lightning payment details with preimage and lnurl_receive_metadata");
+    };
+    let Some(ref pi) = hd.preimage else {
+        panic!("Expected preimage in htlc_details");
+    };
+    assert_eq!(hd.payment_hash, payment_hash_1, "Expected payment_hash_1");
+    assert_eq!(*pi, preimage_1, "Expected preimage from payment details");
+    assert_eq!(
+        metadata.sender_comment,
+        Some("Test comment 1".to_string()),
+        "Expected sender comment from LNURL metadata"
+    );
+    assert_eq!(
+        metadata.nostr_zap_request,
+        Some(r#"{"kind":9734}"#.to_string()),
+        "Expected zap request from LNURL metadata"
+    );
+    assert!(
+        metadata.nostr_zap_receipt.is_none(),
+        "Expected no zap receipt yet"
+    );
+
+    // Now update the LNURL metadata for payment 1 to include preimage (simulating it was sent)
+    storage
+        .set_lnurl_metadata(vec![SetLnurlMetadataItem {
+            payment_hash: payment_hash_1.clone(),
+            sender_comment: Some("Test comment 1".to_string()),
+            nostr_zap_request: Some(r#"{"kind":9734}"#.to_string()),
+            nostr_zap_receipt: Some(r#"{"kind":9735}"#.to_string()),
+            preimage: Some(preimage_1), // Now has preimage
+        }])
+        .await
+        .unwrap();
+
+    // Should now return empty
+    let pending_after = storage
+        .list_payments(StorageListPaymentsRequest {
+            type_filter: Some(vec![PaymentType::Receive]),
+            status_filter: Some(vec![PaymentStatus::Completed]),
+            payment_details_filter: Some(vec![StoragePaymentDetailsFilter::Lightning {
+                htlc_status: None,
+                has_lnurl_preimage: Some(false),
+            }]),
+            limit: Some(100),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(
+        pending_after.is_empty(),
+        "Expected no pending LNURL preimages after updating, got {}",
+        pending_after.len()
+    );
 }

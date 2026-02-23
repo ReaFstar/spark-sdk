@@ -64,3 +64,13 @@ pub(crate) fn configure_stable_balance() -> Result<()> {
     info!("Config: {:?}", config);
     Ok(())
 }
+
+pub(crate) fn configure_lnurl_private_mode_enabled() -> Result<()> {
+    // ANCHOR: lnurl-private-mode-enabled
+    // Enable LNURL private mode
+    let mut config = default_config(Network::Mainnet);
+    config.lnurl_private_mode_enabled = true;
+    // ANCHOR_END: lnurl-private-mode-enabled
+    info!("Config: {:?}", config);
+    Ok(())
+}

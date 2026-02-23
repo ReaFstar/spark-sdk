@@ -114,9 +114,15 @@ impl SparkSyncService {
                 info!("Inserted payment: {payment:?}");
 
                 if should_emit {
-                    info!("Emitting payment event on sync: {payment:?}");
+                    // Re-read from DB to pick up on already persisted metadata.
+                    let emit_payment = self
+                        .storage
+                        .get_payment_by_id(payment.id.clone())
+                        .await
+                        .unwrap_or(payment);
+                    info!("Emitting payment event on sync: {emit_payment:?}");
                     self.event_emitter
-                        .emit(&SdkEvent::from_payment(payment.clone()))
+                        .emit(&SdkEvent::from_payment(emit_payment))
                         .await;
                 }
             }

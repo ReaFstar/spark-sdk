@@ -330,6 +330,17 @@ class MigrationManager {
           if (db.objectStoreNames.contains("settings")) {
             transaction.objectStore("settings").delete("sync_initial_complete");
           }
+        },
+      },
+      {
+        name: "Add preimage to lnurl_receive_metadata for LUD-21 and NIP-57",
+        upgrade: (db, transaction) => {
+          // IndexedDB doesn't need schema changes for new fields on existing stores.
+          // Just clear the lnurl_metadata_updated_after setting to force re-sync.
+          if (db.objectStoreNames.contains("settings")) {
+            const settings = transaction.objectStore("settings");
+            settings.delete("lnurl_metadata_updated_after");
+          }
         }
       },
       {
@@ -421,7 +432,7 @@ class IndexedDBStorage {
     this.db = null;
     this.migrationManager = null;
     this.logger = logger;
-    this.dbVersion = 11; // Current schema version
+    this.dbVersion = 12; // Current schema version
   }
 
   /**
@@ -697,24 +708,28 @@ class IndexedDBStorage {
             metadata
           );
 
-          // Apply filters
-          if (!this._matchesFilters(paymentWithMetadata, request)) {
-            cursor.continue();
-            return;
-          }
-
-          // Fetch lnurl receive metadata if it's a lightning payment
+          // Fetch lnurl receive metadata before filtering, so Lightning
+          // filters can check lnurlReceiveMetadata fields
           this._fetchLnurlReceiveMetadata(
             paymentWithMetadata,
             lnurlReceiveMetadataStore
           )
             .then((mergedPayment) => {
+              // Apply filters after lnurl metadata is populated
+              if (!this._matchesFilters(mergedPayment, request)) {
+                cursor.continue();
+                return;
+              }
               payments.push(mergedPayment);
               count++;
               cursor.continue();
             })
             .catch(() => {
-              // Continue without lnurl receive metadata if fetch fails
+              // Apply filters even if lnurl metadata fetch fails
+              if (!this._matchesFilters(paymentWithMetadata, request)) {
+                cursor.continue();
+                return;
+              }
               payments.push(paymentWithMetadata);
               count++;
               cursor.continue();
@@ -1317,6 +1332,7 @@ class IndexedDBStorage {
           nostrZapRequest: item.nostrZapRequest || null,
           nostrZapReceipt: item.nostrZapReceipt || null,
           senderComment: item.senderComment || null,
+          preimage: item.preimage || null,
         });
 
         request.onsuccess = () => {
@@ -1933,6 +1949,33 @@ class IndexedDBStorage {
             continue;
           }
         }
+        // Filter by LNURL preimage status
+        if (
+          paymentDetailsFilter.type === "lightning" &&
+          paymentDetailsFilter.hasLnurlPreimage != null
+        ) {
+          if (details.type !== "lightning") {
+            continue;
+          }
+          if (paymentDetailsFilter.hasLnurlPreimage) {
+            // Has lnurl preimage - check lnurlReceiveMetadata.preimage exists
+            if (
+              !details.lnurlReceiveMetadata ||
+              !details.lnurlReceiveMetadata.preimage
+            ) {
+              continue;
+            }
+          } else {
+            // Pending: has lnurl metadata, has lightning preimage, but lnurl preimage not yet sent
+            if (
+              !details.lnurlReceiveMetadata ||
+              !details.htlcDetails?.preimage ||
+              details.lnurlReceiveMetadata.preimage
+            ) {
+              continue;
+            }
+          }
+        }
 
 
         paymentDetailsFilterMatches = true;
@@ -2095,15 +2138,12 @@ class IndexedDBStorage {
 
       lnurlReceiveRequest.onsuccess = () => {
         const lnurlReceiveMetadata = lnurlReceiveRequest.result;
-        if (
-          lnurlReceiveMetadata &&
-          (lnurlReceiveMetadata.nostrZapRequest ||
-            lnurlReceiveMetadata.senderComment)
-        ) {
+        if (lnurlReceiveMetadata) {
           payment.details.lnurlReceiveMetadata = {
             nostrZapRequest: lnurlReceiveMetadata.nostrZapRequest || null,
             nostrZapReceipt: lnurlReceiveMetadata.nostrZapReceipt || null,
             senderComment: lnurlReceiveMetadata.senderComment || null,
+            preimage: lnurlReceiveMetadata.preimage || null,
           };
         }
         resolve(payment);

@@ -4,7 +4,7 @@ use std::str::FromStr;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
-use tracing::{error, info, warn};
+use tracing::{Instrument, error, info, warn};
 use web_time::Duration;
 
 use crate::{
@@ -397,7 +397,7 @@ impl BreezSdk {
         &self,
         request: ListPaymentsRequest,
     ) -> Result<ListPaymentsResponse, SdkError> {
-        let mut payments = self.storage.list_payments(request).await?;
+        let mut payments = self.storage.list_payments(request.into()).await?;
 
         // Collect all parent IDs and batch query for related payments
         let parent_ids: Vec<String> = payments.iter().map(|p| p.id.clone()).collect();
@@ -1218,6 +1218,7 @@ impl BreezSdk {
         let payment = payment.clone();
         let payment_id = payment_id.clone();
         let mut shutdown = self.shutdown_sender.subscribe();
+        let span = tracing::Span::current();
 
         tokio::spawn(async move {
             for i in 0..MAX_POLL_ATTEMPTS {
@@ -1257,7 +1258,7 @@ impl BreezSdk {
                     }
                 }
             }
-        });
+        }.instrument(span));
     }
 
     #[expect(clippy::too_many_arguments)]

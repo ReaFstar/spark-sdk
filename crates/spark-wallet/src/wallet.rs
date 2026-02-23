@@ -47,7 +47,7 @@ use spark::{
 };
 use tokio::sync::{broadcast, watch};
 use tokio_with_wasm::alias as tokio;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{Instrument, debug, error, info, trace, warn};
 use web_time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
@@ -1958,11 +1958,15 @@ impl BackgroundProcessor {
 
     pub async fn run_background_tasks(self: &Arc<Self>, cancellation_token: watch::Receiver<()>) {
         let cloned_self = Arc::clone(self);
-        tokio::spawn(async move {
-            cloned_self
-                .run_background_tasks_inner(cancellation_token)
-                .await;
-        });
+        let span = tracing::Span::current();
+        tokio::spawn(
+            async move {
+                cloned_self
+                    .run_background_tasks_inner(cancellation_token)
+                    .await;
+            }
+            .instrument(span),
+        );
     }
 
     async fn run_background_tasks_inner(self: &Arc<Self>, cancellation_token: watch::Receiver<()>) {
@@ -1971,16 +1975,20 @@ impl BackgroundProcessor {
         let reconnect_interval = self.reconnect_interval;
         let identity_public_key = self.identity_public_key;
         let mut cancellation_token_for_events = cancellation_token.clone();
-        tokio::spawn(async move {
-            subscribe_server_events(
-                identity_public_key,
-                operator_pool,
-                &event_tx,
-                reconnect_interval,
-                &mut cancellation_token_for_events,
-            )
-            .await;
-        });
+        let span = tracing::Span::current();
+        tokio::spawn(
+            async move {
+                subscribe_server_events(
+                    identity_public_key,
+                    operator_pool,
+                    &event_tx,
+                    reconnect_interval,
+                    &mut cancellation_token_for_events,
+                )
+                .await;
+            }
+            .instrument(span),
+        );
 
         if let Err(e) = self.tree_service.refresh_leaves().await {
             error!("Error refreshing leaves on startup: {:?}", e);
@@ -1997,11 +2005,15 @@ impl BackgroundProcessor {
         {
             let cloned_self = Arc::clone(self);
             let cancellation_token_clone = cancellation_token.clone();
-            tokio::spawn(async move {
-                cloned_self
-                    .run_token_output_optimization(interval, cancellation_token_clone)
-                    .await;
-            });
+            let span = tracing::Span::current();
+            tokio::spawn(
+                async move {
+                    cloned_self
+                        .run_token_output_optimization(interval, cancellation_token_clone)
+                        .await;
+                }
+                .instrument(span),
+            );
         }
 
         self.process_events(event_stream).await;

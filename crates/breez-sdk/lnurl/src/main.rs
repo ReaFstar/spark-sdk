@@ -20,18 +20,20 @@ use spark::ssp::ServiceProvider;
 use spark::token::InMemoryTokenOutputStore;
 use spark::tree::InMemoryTreeStore;
 use spark_wallet::{DefaultSigner, Network, SparkWalletConfig};
-use sqlx::{PgPool, SqlitePool};
+use sqlx::{PgPool, SqlitePool, sqlite::SqlitePoolOptions};
 use std::collections::HashSet;
 use std::str::FromStr;
 use std::{path::PathBuf, sync::Arc};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, watch};
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{debug, error, info};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use x509_parser::prelude::{FromDer, X509Certificate};
 
 mod auth;
+mod background;
 mod error;
+mod invoice_paid;
 mod postgresql;
 mod repository;
 mod routes;
@@ -142,9 +144,18 @@ async fn main() -> Result<(), anyhow::Error> {
         let repository = postgresql::LnurlRepository::new(pool);
         run_server(args, repository).await?;
     } else {
-        let pool = SqlitePool::connect(&args.db_url)
-            .await
-            .map_err(|e| anyhow!("failed to create connection pool: {:?}", e))?;
+        // For in-memory databases, limit to 1 connection so all queries share
+        // the same database. Each separate connection to `:memory:` creates its
+        // own independent database.
+        let pool = if args.db_url.contains(":memory:") {
+            SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect(&args.db_url)
+                .await
+        } else {
+            SqlitePool::connect(&args.db_url).await
+        }
+        .map_err(|e| anyhow!("failed to create connection pool: {:?}", e))?;
 
         if args.auto_migrate {
             debug!("running sqlite database migrations");
@@ -235,9 +246,33 @@ where
 
     let subscribed_keys = Arc::new(Mutex::new(HashSet::new()));
 
-    // Initialize zap subscriptions if nostr keys are provided
+    // Create watch channel for triggering background processing
+    let (invoice_paid_trigger, invoice_paid_rx) = watch::channel(());
+
+    // Start background processor for handling paid invoices.
+    background::start_background_processor(repository.clone(), nostr_keys.clone(), invoice_paid_rx);
+
+    // Subscribe to users with unexpired invoices for payment monitoring
+    for user in repository.get_invoice_monitored_users().await? {
+        let user_pubkey = bitcoin::secp256k1::PublicKey::from_str(&user)
+            .map_err(|e| anyhow!("failed to parse user pubkey: {e:?}"))?;
+
+        background::create_rpc_client_and_subscribe(
+            repository.clone(),
+            user_pubkey,
+            &connection_manager,
+            &coordinator,
+            signer.clone(),
+            session_manager.clone(),
+            Arc::clone(&service_provider),
+            Arc::clone(&subscribed_keys),
+            invoice_paid_trigger.clone(),
+        )
+        .await?;
+    }
+
     if let Some(nostr_keys) = &nostr_keys {
-        // start bg task to subscribe to users with unexpired invoices
+        // Also subscribe for legacy zap monitoring (users with unexpired zaps)
         for user in repository.get_zap_monitored_users().await? {
             let user_pubkey = bitcoin::secp256k1::PublicKey::from_str(&user)
                 .map_err(|e| anyhow!("failed to parse user pubkey: {e:?}"))?;
@@ -273,6 +308,7 @@ where
         session_manager,
         service_provider,
         subscribed_keys,
+        invoice_paid_trigger,
     };
 
     let server_router = Router::new()
@@ -294,6 +330,10 @@ where
             "/lnurlpay/{pubkey}/metadata/{payment_hash}/zap",
             post(LnurlServer::<DB>::publish_zap_receipt),
         )
+        .route(
+            "/lnurlpay/{pubkey}/invoice-paid",
+            post(LnurlServer::<DB>::invoice_paid),
+        )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             auth::auth::<DB>,
@@ -310,6 +350,7 @@ where
             "/lnurlp/{identifier}/invoice",
             get(LnurlServer::<DB>::handle_invoice),
         )
+        .route("/verify/{payment_hash}", get(LnurlServer::<DB>::verify))
         .layer(Extension(state))
         .layer(
             CorsLayer::new()

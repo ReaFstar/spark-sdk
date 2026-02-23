@@ -53,3 +53,12 @@ func configureStableBalance() async throws {
     // ANCHOR_END: stable-balance-config
     print("Config: \(config)")
 }
+
+func configureLnurlPrivateModeEnabled() async throws {
+    // ANCHOR: lnurl-private-mode-enabled
+    // Enable LNURL private mode
+    var config = defaultConfig(network: Network.mainnet)
+    config.lnurlPrivateModeEnabled = true
+    // ANCHOR_END: lnurl-private-mode-enabled
+    print("Config: \(config)")
+}

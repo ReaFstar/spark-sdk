@@ -1,6 +1,6 @@
 use bitcoin::hex::DisplayHex;
 use lnurl_models::{
-    CheckUsernameAvailableResponse, ListMetadataResponse,
+    CheckUsernameAvailableResponse, InvoicePaidRequest, ListMetadataResponse,
     PublishZapReceiptRequest as ModelPublishZapReceiptRequest, PublishZapReceiptResponse,
     RecoverLnurlPayRequest, RecoverLnurlPayResponse, RegisterLnurlPayRequest,
     RegisterLnurlPayResponse, UnregisterLnurlPayRequest,
@@ -42,7 +42,9 @@ impl std::fmt::Display for LnurlServerError {
 pub struct RegisterLightningAddressRequest {
     pub username: String,
     pub description: String,
-    pub nostr_pubkey: Option<String>,
+    /// When true, the SDK operates in LNURL private mode: the LNURL server won't track
+    /// invoice payments for this user (LUD-21 and NIP-57 disabled).
+    pub lnurl_private_mode_enabled: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -86,6 +88,9 @@ pub trait LnurlServerClient: Send + Sync {
         &self,
         request: &PublishZapReceiptRequest,
     ) -> Result<String, LnurlServerError>;
+    /// Notify the server that an invoice has been paid with the given preimage.
+    /// This is used for LUD-21 and NIP-57 invoice tracking.
+    async fn notify_invoice_paid(&self, preimage: &str) -> Result<(), LnurlServerError>;
 }
 
 /// Default `LnurlServerClient` implementation using `HttpClient` abstraction.
@@ -192,10 +197,7 @@ impl LnurlServerClient for DefaultLnurlServerClient {
     async fn recover_lightning_address(
         &self,
     ) -> Result<Option<RecoverLnurlPayResponse>, LnurlServerError> {
-        let spark_address = self.wallet.get_spark_address().map_err(|e| {
-            LnurlServerError::SigningError(format!("Failed to get spark address: {e}"))
-        })?;
-        let pubkey = spark_address.identity_public_key;
+        let pubkey = self.wallet.get_identity_public_key();
 
         let (signature, timestamp) = self.sign_message(&pubkey.to_string()).await?;
 
@@ -235,10 +237,7 @@ impl LnurlServerClient for DefaultLnurlServerClient {
         &self,
         request: &RegisterLightningAddressRequest,
     ) -> Result<RegisterLnurlPayResponse, LnurlServerError> {
-        let spark_address = self.wallet.get_spark_address().map_err(|e| {
-            LnurlServerError::SigningError(format!("Failed to get spark address: {e}"))
-        })?;
-        let pubkey = spark_address.identity_public_key;
+        let pubkey = self.wallet.get_identity_public_key();
 
         let (signature, timestamp) = self.sign_message(&request.username).await?;
 
@@ -247,7 +246,7 @@ impl LnurlServerClient for DefaultLnurlServerClient {
             description: request.description.clone(),
             signature,
             timestamp: Some(timestamp),
-            nostr_pubkey: request.nostr_pubkey.clone(),
+            lnurl_private_mode_enabled: request.lnurl_private_mode_enabled,
         };
 
         let url = format!("{}/lnurlpay/{}", self.base_url(), pubkey);
@@ -267,10 +266,7 @@ impl LnurlServerClient for DefaultLnurlServerClient {
         &self,
         request: &UnregisterLightningAddressRequest,
     ) -> Result<(), LnurlServerError> {
-        let spark_address = self.wallet.get_spark_address().map_err(|e| {
-            LnurlServerError::SigningError(format!("Failed to get spark address: {e}"))
-        })?;
-        let pubkey = spark_address.identity_public_key;
+        let pubkey = self.wallet.get_identity_public_key();
 
         let (signature, timestamp) = self.sign_message(&request.username).await?;
 
@@ -305,10 +301,7 @@ impl LnurlServerClient for DefaultLnurlServerClient {
         &self,
         request: &ListMetadataRequest,
     ) -> Result<ListMetadataResponse, LnurlServerError> {
-        let spark_address = self.wallet.get_spark_address().map_err(|e| {
-            LnurlServerError::SigningError(format!("Failed to get spark address: {e}"))
-        })?;
-        let pubkey = spark_address.identity_public_key;
+        let pubkey = self.wallet.get_identity_public_key();
 
         let (signature, timestamp) = self.sign_message(&pubkey.to_string()).await?;
 
@@ -339,10 +332,7 @@ impl LnurlServerClient for DefaultLnurlServerClient {
         &self,
         request: &PublishZapReceiptRequest,
     ) -> Result<String, LnurlServerError> {
-        let spark_address = self.wallet.get_spark_address().map_err(|e| {
-            LnurlServerError::SigningError(format!("Failed to get spark address: {e}"))
-        })?;
-        let pubkey = spark_address.identity_public_key;
+        let pubkey = self.wallet.get_identity_public_key();
 
         let (signature, timestamp) = self.sign_message(&request.zap_receipt).await?;
 
@@ -371,5 +361,36 @@ impl LnurlServerClient for DefaultLnurlServerClient {
         let result: PublishZapReceiptResponse =
             Self::handle_response(response.status, &response.body)?;
         Ok(result.zap_receipt)
+    }
+
+    async fn notify_invoice_paid(&self, preimage: &str) -> Result<(), LnurlServerError> {
+        let pubkey = self.wallet.get_identity_public_key();
+
+        let (signature, timestamp) = self.sign_message(preimage).await?;
+
+        let url = format!("{}/lnurlpay/{}/invoice-paid", self.base_url(), pubkey);
+
+        let payload = InvoicePaidRequest {
+            signature,
+            timestamp: Some(timestamp),
+            preimage: preimage.to_string(),
+        };
+        let body = serde_json::to_string(&payload)
+            .map_err(|e| LnurlServerError::RequestFailure(e.to_string()))?;
+
+        let response = self
+            .http_client
+            .post(url, Some(self.get_post_headers()), Some(body))
+            .await
+            .map_err(|e| LnurlServerError::RequestFailure(e.to_string()))?;
+
+        match response.status {
+            401 => Err(LnurlServerError::InvalidApiKey),
+            s if (200..300).contains(&s) => Ok(()),
+            other => Err(LnurlServerError::Network {
+                statuscode: other,
+                message: Some(response.body),
+            }),
+        }
     }
 }

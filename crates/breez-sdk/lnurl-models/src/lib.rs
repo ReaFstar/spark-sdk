@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-pub mod nostr;
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CheckUsernameAvailableResponse {
     pub available: bool,
@@ -19,7 +17,6 @@ pub struct RecoverLnurlPayResponse {
     pub lightning_address: String,
     pub username: String,
     pub description: String,
-    pub nostr_pubkey: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -28,7 +25,10 @@ pub struct RegisterLnurlPayRequest {
     pub signature: String,
     pub timestamp: Option<u64>,
     pub description: String,
-    pub nostr_pubkey: Option<String>,
+    /// When true, the SDK operates in LNURL private mode: the LNURL server won't track
+    /// invoice payments for this user (LUD-21 and NIP-57 disabled).
+    #[serde(default)]
+    pub lnurl_private_mode_enabled: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -50,6 +50,8 @@ pub struct ListMetadataRequest {
     pub timestamp: Option<u64>,
     pub offset: Option<u32>,
     pub limit: Option<u32>,
+    /// Only return metadata updated after this timestamp (milliseconds)
+    pub updated_after: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -66,6 +68,8 @@ pub struct ListMetadataMetadata {
     pub nostr_zap_receipt: Option<String>,
     /// Unix timestamp (milliseconds) when this metadata was last updated
     pub updated_at: i64,
+    /// The payment preimage if invoice has been paid
+    pub preimage: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -73,6 +77,13 @@ pub struct PublishZapReceiptRequest {
     pub signature: String,
     pub timestamp: Option<u64>,
     pub zap_receipt: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InvoicePaidRequest {
+    pub signature: String,
+    pub timestamp: Option<u64>,
+    pub preimage: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

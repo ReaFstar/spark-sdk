@@ -22,6 +22,8 @@ use tokio::sync::mpsc;
 pub struct SdkInstance {
     pub sdk: BreezSdk,
     pub events: mpsc::Receiver<SdkEvent>,
+    /// Tracing span for attributing logs to this SDK instance (e.g. "alice" or "bob")
+    pub span: tracing::Span,
     #[allow(dead_code)]
     temp_dir: Option<TempDir>,
     #[allow(dead_code)]

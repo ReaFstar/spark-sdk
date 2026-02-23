@@ -64,5 +64,16 @@ namespace BreezSdkSnippets
             };
             // ANCHOR_END: stable-balance-config
         }
+
+        void ConfigureLnurlPrivateModeEnabled()
+        {
+            // ANCHOR: lnurl-private-mode-enabled
+            // Enable LNURL private mode
+            var config = BreezSdkSparkMethods.DefaultConfig(Network.Mainnet) with
+            {
+                lnurlPrivateModeEnabled = true
+            };
+            // ANCHOR_END: lnurl-private-mode-enabled
+        }
     }
 }

@@ -16,11 +16,13 @@ use tokio_postgres_rustls::MakeRustlsConnect;
 use webpki_roots::TLS_SERVER_ROOTS;
 
 use crate::{
-    AssetFilter, ConversionInfo, DepositInfo, ListPaymentsRequest, LnurlPayInfo,
-    LnurlReceiveMetadata, LnurlWithdrawInfo, PaymentDetails, PaymentDetailsFilter, PaymentMethod,
-    SparkHtlcDetails, SparkHtlcStatus,
+    AssetFilter, ConversionInfo, DepositInfo, LnurlPayInfo, LnurlReceiveMetadata,
+    LnurlWithdrawInfo, PaymentDetails, PaymentMethod, SparkHtlcDetails, SparkHtlcStatus,
     error::DepositClaimError,
-    persist::{PaymentMetadata, SetLnurlMetadataItem, UpdateDepositPayload},
+    persist::{
+        PaymentMetadata, SetLnurlMetadataItem, StorageListPaymentsRequest,
+        StoragePaymentDetailsFilter, UpdateDepositPayload,
+    },
     sync_storage::{
         IncomingChange, OutgoingChange, Record, RecordChange, RecordId, UnversionedRecordChange,
     },
@@ -719,6 +721,13 @@ impl PostgresStorage {
                  SET value = jsonb_set(value::jsonb, '{offset}', '0')::text
                  WHERE key = 'sync_offset' AND value IS NOT NULL",
             ],
+            // Migration 8: Add preimage column for LUD-21 and NIP-57 support
+            &[
+                "ALTER TABLE lnurl_receive_metadata ADD COLUMN IF NOT EXISTS preimage TEXT",
+                // Clear the lnurl_metadata_updated_after setting to force re-sync
+                // This ensures clients get the new preimage field from the server
+                "DELETE FROM settings WHERE key = 'lnurl_metadata_updated_after'",
+            ],
         ]
     }
 }
@@ -779,7 +788,7 @@ impl Storage for PostgresStorage {
     #[allow(clippy::too_many_lines, clippy::arithmetic_side_effects)]
     async fn list_payments(
         &self,
-        request: ListPaymentsRequest,
+        request: StorageListPaymentsRequest,
     ) -> Result<Vec<Payment>, StorageError> {
         let client = self.pool.get().await.map_err(map_pool_error)?;
 
@@ -862,12 +871,13 @@ impl Storage for PostgresStorage {
                 let mut payment_details_clauses = Vec::new();
                 // Filter by HTLC status (Spark or Lightning)
                 let htlc_filter = match payment_details_filter {
-                    PaymentDetailsFilter::Spark {
+                    StoragePaymentDetailsFilter::Spark {
                         htlc_status: Some(s),
                         ..
                     } if !s.is_empty() => Some(("s", s)),
-                    PaymentDetailsFilter::Lightning {
+                    StoragePaymentDetailsFilter::Lightning {
                         htlc_status: Some(s),
+                        ..
                     } if !s.is_empty() => Some(("l", s)),
                     _ => None,
                 };
@@ -897,11 +907,11 @@ impl Storage for PostgresStorage {
                 }
                 // Filter by conversion info presence
                 let conversion_filter = match payment_details_filter {
-                    PaymentDetailsFilter::Spark {
+                    StoragePaymentDetailsFilter::Spark {
                         conversion_refund_needed: Some(v),
                         ..
                     } => Some((v, "p.spark = true")),
-                    PaymentDetailsFilter::Token {
+                    StoragePaymentDetailsFilter::Token {
                         conversion_refund_needed: Some(v),
                         ..
                     } => Some((v, "p.spark IS NULL")),
@@ -919,7 +929,7 @@ impl Storage for PostgresStorage {
                     ));
                 }
                 // Filter by token transaction hash
-                if let PaymentDetailsFilter::Token {
+                if let StoragePaymentDetailsFilter::Token {
                     tx_hash: Some(tx_hash),
                     ..
                 } = payment_details_filter
@@ -929,7 +939,7 @@ impl Storage for PostgresStorage {
                     params.push(Box::new(tx_hash.clone()));
                 }
                 // Filter by token transaction type
-                if let PaymentDetailsFilter::Token {
+                if let StoragePaymentDetailsFilter::Token {
                     tx_type: Some(tx_type),
                     ..
                 } = payment_details_filter
@@ -937,6 +947,22 @@ impl Storage for PostgresStorage {
                     payment_details_clauses.push(format!("t.tx_type = ${param_idx}"));
                     param_idx += 1;
                     params.push(Box::new(tx_type.to_string()));
+                }
+
+                // Filter by LNURL preimage status
+                if let StoragePaymentDetailsFilter::Lightning {
+                    has_lnurl_preimage: Some(has_preimage),
+                    ..
+                } = payment_details_filter
+                {
+                    if *has_preimage {
+                        payment_details_clauses.push("lrm.preimage IS NOT NULL".to_string());
+                    } else {
+                        // Has lnurl metadata, lightning preimage exists, but lnurl preimage not yet sent
+                        payment_details_clauses.push(
+                            "lrm.payment_hash IS NOT NULL AND l.preimage IS NOT NULL AND lrm.preimage IS NULL".to_string(),
+                        );
+                    }
                 }
 
                 if !payment_details_clauses.is_empty() {
@@ -1259,7 +1285,7 @@ impl Storage for PostgresStorage {
         let mut result: HashMap<String, Vec<Payment>> = HashMap::new();
         for row in rows {
             let payment = map_payment(&row)?;
-            let parent_payment_id: String = row.get(29);
+            let parent_payment_id: String = row.get(30);
             result.entry(parent_payment_id).or_default().push(payment);
         }
 
@@ -1366,13 +1392,14 @@ impl Storage for PostgresStorage {
         for m in metadata {
             client
                 .execute(
-                    "INSERT INTO lnurl_receive_metadata (payment_hash, nostr_zap_request, nostr_zap_receipt, sender_comment)
-                     VALUES ($1, $2, $3, $4)
+                    "INSERT INTO lnurl_receive_metadata (payment_hash, nostr_zap_request, nostr_zap_receipt, sender_comment, preimage)
+                     VALUES ($1, $2, $3, $4, $5)
                      ON CONFLICT(payment_hash) DO UPDATE SET
                         nostr_zap_request = EXCLUDED.nostr_zap_request,
                         nostr_zap_receipt = EXCLUDED.nostr_zap_receipt,
-                        sender_comment = EXCLUDED.sender_comment",
-                    &[&m.payment_hash, &m.nostr_zap_request, &m.nostr_zap_receipt, &m.sender_comment],
+                        sender_comment = EXCLUDED.sender_comment,
+                        preimage = EXCLUDED.preimage",
+                    &[&m.payment_hash, &m.nostr_zap_request, &m.nostr_zap_receipt, &m.sender_comment, &m.preimage],
                 )
                 .await?;
         }
@@ -1741,7 +1768,7 @@ impl Storage for PostgresStorage {
 }
 
 /// Base query for payment lookups.
-/// Column indices 0-28 are used by `map_payment`, index 29 (`parent_payment_id`) is only used by `get_payments_by_parent_ids`.
+/// Column indices 0-29 are used by `map_payment`, index 30 (`parent_payment_id`) is only used by `get_payments_by_parent_ids`.
 const SELECT_PAYMENT_SQL: &str = "
     SELECT p.id,
            p.payment_type,
@@ -1772,6 +1799,7 @@ const SELECT_PAYMENT_SQL: &str = "
            lrm.nostr_zap_request AS lnurl_nostr_zap_request,
            lrm.nostr_zap_receipt AS lnurl_nostr_zap_receipt,
            lrm.sender_comment AS lnurl_sender_comment,
+           lrm.payment_hash AS lnurl_payment_hash,
            pm.parent_payment_id
       FROM payments p
       LEFT JOIN payment_details_lightning l ON p.id = l.payment_id
@@ -1823,21 +1851,21 @@ fn map_payment(row: &Row) -> Result<Payment, StorageError> {
             let lnurl_nostr_zap_request: Option<String> = row.get(26);
             let lnurl_nostr_zap_receipt: Option<String> = row.get(27);
             let lnurl_sender_comment: Option<String> = row.get(28);
+            let lnurl_payment_hash: Option<String> = row.get(29);
 
             let lnurl_pay_info: Option<LnurlPayInfo> = from_json_opt(lnurl_pay_info_json)?;
             let lnurl_withdraw_info: Option<LnurlWithdrawInfo> =
                 from_json_opt(lnurl_withdraw_info_json)?;
 
-            let lnurl_receive_metadata =
-                if lnurl_nostr_zap_request.is_some() || lnurl_sender_comment.is_some() {
-                    Some(LnurlReceiveMetadata {
-                        nostr_zap_request: lnurl_nostr_zap_request,
-                        nostr_zap_receipt: lnurl_nostr_zap_receipt,
-                        sender_comment: lnurl_sender_comment,
-                    })
-                } else {
-                    None
-                };
+            let lnurl_receive_metadata = if lnurl_payment_hash.is_some() {
+                Some(LnurlReceiveMetadata {
+                    nostr_zap_request: lnurl_nostr_zap_request,
+                    nostr_zap_receipt: lnurl_nostr_zap_receipt,
+                    sender_comment: lnurl_sender_comment,
+                })
+            } else {
+                None
+            };
             Some(PaymentDetails::Lightning {
                 invoice,
                 destination_pubkey,
@@ -2064,6 +2092,12 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_pending_lnurl_preimages() {
+        let fixture = PostgresTestFixture::new().await;
+        crate::persist::tests::test_pending_lnurl_preimages(Box::new(fixture.storage)).await;
+    }
+
+    #[tokio::test]
     async fn test_sync_storage() {
         let fixture = PostgresTestFixture::new().await;
         crate::persist::tests::test_sync_storage(Box::new(fixture.storage)).await;
@@ -2139,7 +2173,8 @@ mod tests {
     #[allow(clippy::too_many_lines)]
     async fn test_migration_htlc_details() {
         use crate::{
-            ListPaymentsRequest, PaymentDetails, PaymentDetailsFilter, SparkHtlcStatus, Storage,
+            PaymentDetails, SparkHtlcStatus, Storage,
+            persist::{StorageListPaymentsRequest, StoragePaymentDetailsFilter},
         };
 
         // Start a PostgreSQL container
@@ -2346,9 +2381,10 @@ mod tests {
 
         // Step 7: Verify filtering by htlc_status works on migrated data
         let waiting_payments = storage
-            .list_payments(ListPaymentsRequest {
-                payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
+            .list_payments(StorageListPaymentsRequest {
+                payment_details_filter: Some(vec![StoragePaymentDetailsFilter::Lightning {
                     htlc_status: Some(vec![SparkHtlcStatus::WaitingForPreimage]),
+                    has_lnurl_preimage: None,
                 }]),
                 ..Default::default()
             })
@@ -2358,9 +2394,10 @@ mod tests {
         assert_eq!(waiting_payments[0].id, "ln-pending");
 
         let preimage_shared = storage
-            .list_payments(ListPaymentsRequest {
-                payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
+            .list_payments(StorageListPaymentsRequest {
+                payment_details_filter: Some(vec![StoragePaymentDetailsFilter::Lightning {
                     htlc_status: Some(vec![SparkHtlcStatus::PreimageShared]),
+                    has_lnurl_preimage: None,
                 }]),
                 ..Default::default()
             })
@@ -2370,9 +2407,10 @@ mod tests {
         assert_eq!(preimage_shared[0].id, "ln-completed");
 
         let returned = storage
-            .list_payments(ListPaymentsRequest {
-                payment_details_filter: Some(vec![PaymentDetailsFilter::Lightning {
+            .list_payments(StorageListPaymentsRequest {
+                payment_details_filter: Some(vec![StoragePaymentDetailsFilter::Lightning {
                     htlc_status: Some(vec![SparkHtlcStatus::Returned]),
+                    has_lnurl_preimage: None,
                 }]),
                 ..Default::default()
             })

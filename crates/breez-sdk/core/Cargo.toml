@@ -35,7 +35,6 @@ flashnet.workspace = true
 hex.workspace = true
 lnurl-models.workspace = true
 macros.workspace = true
-nostr.workspace = true
 openssl = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
