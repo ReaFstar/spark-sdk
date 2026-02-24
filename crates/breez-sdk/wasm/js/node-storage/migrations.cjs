@@ -374,6 +374,10 @@ class MigrationManager {
            WHERE key = 'sync_offset' AND json_valid(value)`,
         ]
       },
+      {
+        name: "Clear cached lightning address for LnurlInfo schema change",
+        sql: `DELETE FROM settings WHERE key = 'lightning_address'`
+      },
     ];
   }
 }
