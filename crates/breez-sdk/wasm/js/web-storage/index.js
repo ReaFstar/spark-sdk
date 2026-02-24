@@ -408,7 +408,16 @@ class MigrationManager {
             };
           }
         },
-      }
+      },
+      {
+        name: "Clear cached lightning address for LnurlInfo schema change",
+        upgrade: (db, transaction) => {
+          if (db.objectStoreNames.contains("settings")) {
+            const settings = transaction.objectStore("settings");
+            settings.delete("lightning_address");
+          }
+        }
+      },
     ];
   }
 }
@@ -432,7 +441,7 @@ class IndexedDBStorage {
     this.db = null;
     this.migrationManager = null;
     this.logger = logger;
-    this.dbVersion = 12; // Current schema version
+    this.dbVersion = 13; // Current schema version
   }
 
   /**

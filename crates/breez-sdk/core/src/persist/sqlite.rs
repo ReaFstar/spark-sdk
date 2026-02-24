@@ -309,6 +309,8 @@ impl SqliteStorage {
             // Clear the lnurl_metadata_updated_after setting to force re-sync
             // This ensures clients get the new preimage field from the server
             "DELETE FROM settings WHERE key = 'lnurl_metadata_updated_after';",
+            // Clear cached lightning address - schema changed from string to LnurlInfo struct
+            "DELETE FROM settings WHERE key = 'lightning_address';",
         ]
     }
 }

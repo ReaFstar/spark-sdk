@@ -699,6 +699,10 @@ impl PostgresStorage {
                 // This ensures clients get the new preimage field from the server
                 "DELETE FROM settings WHERE key = 'lnurl_metadata_updated_after'",
             ],
+            // Migration 9: Clear cached lightning address - schema changed from string to LnurlInfo struct
+            &[
+                "DELETE FROM settings WHERE key = 'lightning_address'",
+            ],
         ]
     }
 }
