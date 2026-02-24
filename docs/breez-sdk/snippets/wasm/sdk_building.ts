@@ -1,4 +1,4 @@
-import { SdkBuilder, defaultConfig } from '@breeztech/breez-sdk-spark'
+import { SdkBuilder, defaultConfig, defaultPostgresStorageConfig } from '@breeztech/breez-sdk-spark'
 import type {
   ProvisionalPayment,
   Seed,
@@ -47,6 +47,32 @@ const exampleGettingStartedAdvanced = async () => {
   // builder = builder.withPaymentObserver(<your payment observer implementation>)
   const sdk = await builder.build()
   // ANCHOR_END: init-sdk-advanced
+}
+
+const exampleWithPostgresStorage = async () => {
+  // ANCHOR: init-sdk-postgres
+  // Construct the seed using mnemonic words or entropy bytes
+  const mnemonic = '<mnemonic words>'
+  const seed: Seed = { type: 'mnemonic', mnemonic, passphrase: undefined }
+
+  // Create the default config
+  const config = defaultConfig('mainnet')
+  config.apiKey = '<breez api key>'
+
+  // Configure PostgreSQL storage
+  // Connection string format: "host=localhost user=postgres password=secret dbname=spark"
+  // Or URI format: "postgres://user:password@host:port/dbname?sslmode=require"
+  const pgConfig = defaultPostgresStorageConfig('host=localhost user=postgres dbname=spark')
+  // Optionally pool settings can be adjusted. Some examples:
+  pgConfig.maxPoolSize = 8 // Max connections in pool
+  pgConfig.createTimeoutSecs = 30 // Timeout for establishing a new connection
+  pgConfig.recycleTimeoutSecs = 30 // Timeout for recycling an idle connection
+
+  // Build the SDK with PostgreSQL storage
+  let builder = SdkBuilder.new(config, seed)
+  builder = builder.withPostgresStorage(pgConfig)
+  const sdk = await builder.build()
+  // ANCHOR_END: init-sdk-postgres
 }
 
 const exampleWithRestChainService = async (builder: SdkBuilder) => {

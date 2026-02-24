@@ -703,6 +703,10 @@ impl PostgresStorage {
             &[
                 "DELETE FROM settings WHERE key = 'lightning_address'",
             ],
+            // Migration 10: Add index on payment_hash for JOIN with lnurl_receive_metadata
+            &[
+                "CREATE INDEX IF NOT EXISTS idx_payment_details_lightning_payment_hash ON payment_details_lightning(payment_hash)",
+            ],
         ]
     }
 }
@@ -1002,17 +1006,29 @@ impl Storage for PostgresStorage {
 
         let tx = client.transaction().await.map_err(map_db_error)?;
 
-        // Insert or update main payment record
+        // Compute detail columns for the main payments row
+        let (withdraw_tx_id, deposit_tx_id, spark): (Option<&str>, Option<&str>, Option<bool>) =
+            match &payment.details {
+                Some(PaymentDetails::Withdraw { tx_id }) => (Some(tx_id.as_str()), None, None),
+                Some(PaymentDetails::Deposit { tx_id }) => (None, Some(tx_id.as_str()), None),
+                Some(PaymentDetails::Spark { .. }) => (None, None, Some(true)),
+                _ => (None, None, None),
+            };
+
+        // Insert or update main payment record (including detail columns atomically)
         tx.execute(
-            "INSERT INTO payments (id, payment_type, status, amount, fees, timestamp, method)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)
+            "INSERT INTO payments (id, payment_type, status, amount, fees, timestamp, method, withdraw_tx_id, deposit_tx_id, spark)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                  ON CONFLICT(id) DO UPDATE SET
                     payment_type = EXCLUDED.payment_type,
                     status = EXCLUDED.status,
                     amount = EXCLUDED.amount,
                     fees = EXCLUDED.fees,
                     timestamp = EXCLUDED.timestamp,
-                    method = EXCLUDED.method",
+                    method = EXCLUDED.method,
+                    withdraw_tx_id = EXCLUDED.withdraw_tx_id,
+                    deposit_tx_id = EXCLUDED.deposit_tx_id,
+                    spark = EXCLUDED.spark",
             &[
                 &payment.id,
                 &payment.payment_type.to_string(),
@@ -1021,35 +1037,19 @@ impl Storage for PostgresStorage {
                 &payment.fees.to_string(),
                 &i64::try_from(payment.timestamp)?,
                 &Some(payment.method.to_string()),
+                &withdraw_tx_id,
+                &deposit_tx_id,
+                &spark,
             ],
         )
         .await?;
 
         match payment.details {
-            Some(PaymentDetails::Withdraw { tx_id }) => {
-                tx.execute(
-                    "UPDATE payments SET withdraw_tx_id = $1 WHERE id = $2",
-                    &[&tx_id, &payment.id],
-                )
-                .await?;
-            }
-            Some(PaymentDetails::Deposit { tx_id }) => {
-                tx.execute(
-                    "UPDATE payments SET deposit_tx_id = $1 WHERE id = $2",
-                    &[&tx_id, &payment.id],
-                )
-                .await?;
-            }
             Some(PaymentDetails::Spark {
                 invoice_details,
                 htlc_details,
                 ..
             }) => {
-                tx.execute(
-                    "UPDATE payments SET spark = true WHERE id = $1",
-                    &[&payment.id],
-                )
-                .await?;
                 if invoice_details.is_some() || htlc_details.is_some() {
                     let invoice_json = to_json_opt(invoice_details.as_ref())?;
                     let htlc_json = to_json_opt(htlc_details.as_ref())?;
@@ -1112,7 +1112,8 @@ impl Storage for PostgresStorage {
                 )
                 .await?;
             }
-            None => {}
+            // Withdraw/Deposit detail columns are already set in the main INSERT
+            Some(PaymentDetails::Withdraw { .. } | PaymentDetails::Deposit { .. }) | None => {}
         }
 
         tx.commit().await.map_err(map_db_error)?;
@@ -1339,7 +1340,7 @@ impl Storage for PostgresStorage {
                     .map_err(|e| StorageError::Serialization(e.to_string()))?;
                 client
                     .execute(
-                        "UPDATE unclaimed_deposits SET claim_error = $1 WHERE txid = $2 AND vout = $3",
+                        "UPDATE unclaimed_deposits SET claim_error = $1, refund_tx = NULL, refund_tx_id = NULL WHERE txid = $2 AND vout = $3",
                         &[&error_json, &txid, &i32::try_from(vout)?],
                     )
                     .await?;
@@ -1350,7 +1351,7 @@ impl Storage for PostgresStorage {
             } => {
                 client
                     .execute(
-                        "UPDATE unclaimed_deposits SET refund_tx = $1, refund_tx_id = $2 WHERE txid = $3 AND vout = $4",
+                        "UPDATE unclaimed_deposits SET refund_tx = $1, refund_tx_id = $2, claim_error = NULL WHERE txid = $3 AND vout = $4",
                         &[&refund_tx, &refund_txid, &txid, &i32::try_from(vout)?],
                     )
                     .await?;

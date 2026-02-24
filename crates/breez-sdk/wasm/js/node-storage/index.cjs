@@ -420,8 +420,8 @@ class SqliteStorage {
             destinationPubkey: payment.details.destinationPubkey,
             description: payment.details.description,
             preimage: payment.details.htlcDetails?.preimage,
-            htlcStatus: payment.details.htlcDetails?.status || null,
-            htlcExpiryTime: payment.details.htlcDetails?.expiryTime || 0,
+            htlcStatus: payment.details.htlcDetails?.status ?? null,
+            htlcExpiryTime: payment.details.htlcDetails?.expiryTime ?? 0,
           });
         }
 
@@ -736,7 +736,7 @@ class SqliteStorage {
           ? {
               paymentHash: row.lightning_payment_hash,
               preimage: row.lightning_preimage || null,
-              expiryTime: row.lightning_htlc_expiry_time || 0,
+              expiryTime: row.lightning_htlc_expiry_time ?? 0,
               status: row.lightning_htlc_status,
             }
           : (() => { throw new StorageError(`htlc_status is required for Lightning payment ${row.id}`); })(),
@@ -830,6 +830,7 @@ class SqliteStorage {
       timestamp: row.timestamp,
       method,
       details,
+      conversionDetails: null,
     };
   }
 
