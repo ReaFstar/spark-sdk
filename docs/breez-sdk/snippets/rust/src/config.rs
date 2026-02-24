@@ -65,12 +65,12 @@ pub(crate) fn configure_stable_balance() -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn configure_lnurl_private_mode_enabled() -> Result<()> {
-    // ANCHOR: lnurl-private-mode-enabled
-    // Enable LNURL private mode
+pub(crate) fn configure_support_lnurl_verify() -> Result<()> {
+    // ANCHOR: support-lnurl-verify
+    // Enable LNURL verify support (LUD-21 and NIP-57)
     let mut config = default_config(Network::Mainnet);
-    config.lnurl_private_mode_enabled = true;
-    // ANCHOR_END: lnurl-private-mode-enabled
+    config.support_lnurl_verify = true;
+    // ANCHOR_END: support-lnurl-verify
     info!("Config: {:?}", config);
     Ok(())
 }

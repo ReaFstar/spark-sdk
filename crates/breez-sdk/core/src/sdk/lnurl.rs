@@ -493,8 +493,8 @@ impl BreezSdk {
     /// Background task that publishes lnurl preimages for received lnurl payments for nostr zaps
     /// and LNURL verify. Triggered on startup and after syncing lnurl metadata.
     pub(super) fn spawn_lnurl_preimage_publisher(&self) {
-        if self.config.lnurl_private_mode_enabled {
-            debug!("LNURL private mode is enabled. Not enabling LNURL payment status.");
+        if !self.config.support_lnurl_verify {
+            debug!("LNURL verify support is disabled. Not enabling LNURL payment status.");
             return;
         }
 

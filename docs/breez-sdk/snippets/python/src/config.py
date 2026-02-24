@@ -58,10 +58,10 @@ async def configure_stable_balance():
     # ANCHOR_END: stable-balance-config
     logging.info(f"Config: {config}")
 
-async def configure_lnurl_private_mode_enabled():
-    # ANCHOR: lnurl-private-mode-enabled
-    # Enable LNURL private mode
+async def configure_support_lnurl_verify():
+    # ANCHOR: support-lnurl-verify
+    # Enable LNURL verify support (LUD-21 and NIP-57)
     config = default_config(network=Network.MAINNET)
-    config.lnurl_private_mode_enabled = True
-    # ANCHOR_END: lnurl-private-mode-enabled
+    config.support_lnurl_verify = True
+    # ANCHOR_END: support-lnurl-verify
     logging.info(f"Config: {config}")
