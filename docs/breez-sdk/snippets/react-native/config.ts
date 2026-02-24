@@ -60,12 +60,12 @@ const exampleConfigureStableBalance = () => {
   console.log('Config:', config)
 }
 
-const exampleConfigureLnurlPrivateModeEnabled = () => {
-  // ANCHOR: lnurl-private-mode-enabled
-  // Enable LNURL private mode
+const exampleConfigureSupportLnurlVerify = () => {
+  // ANCHOR: support-lnurl-verify
+  // Enable LNURL verify support (LUD-21 and NIP-57)
   const config = defaultConfig(Network.Mainnet)
-  config.lnurlPrivateModeEnabled = true
-  // ANCHOR_END: lnurl-private-mode-enabled
+  config.supportLnurlVerify = true
+  // ANCHOR_END: support-lnurl-verify
   console.log('Config:', config)
 }
 
@@ -74,5 +74,5 @@ export {
   exampleConfigurePrivateEnabledDefault,
   exampleConfigureOptimizationConfiguration,
   exampleConfigureStableBalance,
-  exampleConfigureLnurlPrivateModeEnabled
+  exampleConfigureSupportLnurlVerify
 }

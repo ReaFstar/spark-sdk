@@ -14,7 +14,7 @@ extension ConfigCopyWith on Config {
     OptimizationConfig? optimizationConfig,
     StableBalanceConfig? stableBalanceConfig,
     int? maxConcurrentClaims,
-    bool? lnurlPrivateModeEnabled,
+    bool? supportLnurlVerify,
   }) {
     return Config(
       apiKey: apiKey ?? this.apiKey,
@@ -32,8 +32,8 @@ extension ConfigCopyWith on Config {
       optimizationConfig: optimizationConfig ?? this.optimizationConfig,
       stableBalanceConfig: stableBalanceConfig ?? this.stableBalanceConfig,
       maxConcurrentClaims: maxConcurrentClaims ?? this.maxConcurrentClaims,
-      lnurlPrivateModeEnabled:
-          lnurlPrivateModeEnabled ?? this.lnurlPrivateModeEnabled,
+      supportLnurlVerify:
+          supportLnurlVerify ?? this.supportLnurlVerify,
     );
   }
 }
