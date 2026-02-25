@@ -65,15 +65,15 @@ namespace BreezSdkSnippets
             // ANCHOR_END: stable-balance-config
         }
 
-        void ConfigureLnurlPrivateModeEnabled()
+        void ConfigureSupportLnurlVerify()
         {
-            // ANCHOR: lnurl-private-mode-enabled
-            // Enable LNURL private mode
+            // ANCHOR: support-lnurl-verify
+            // Enable LNURL verify support (LUD-21 and NIP-57)
             var config = BreezSdkSparkMethods.DefaultConfig(Network.Mainnet) with
             {
-                lnurlPrivateModeEnabled = true
+                supportLnurlVerify = true
             };
-            // ANCHOR_END: lnurl-private-mode-enabled
+            // ANCHOR_END: support-lnurl-verify
         }
     }
 }

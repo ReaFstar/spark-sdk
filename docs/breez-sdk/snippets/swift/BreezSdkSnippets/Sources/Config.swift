@@ -54,11 +54,11 @@ func configureStableBalance() async throws {
     print("Config: \(config)")
 }
 
-func configureLnurlPrivateModeEnabled() async throws {
-    // ANCHOR: lnurl-private-mode-enabled
-    // Enable LNURL private mode
+func configureSupportLnurlVerify() async throws {
+    // ANCHOR: support-lnurl-verify
+    // Enable LNURL verify support (LUD-21 and NIP-57)
     var config = defaultConfig(network: Network.mainnet)
-    config.lnurlPrivateModeEnabled = true
-    // ANCHOR_END: lnurl-private-mode-enabled
+    config.supportLnurlVerify = true
+    // ANCHOR_END: support-lnurl-verify
     print("Config: \(config)")
 }

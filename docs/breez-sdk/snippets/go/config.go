@@ -68,11 +68,11 @@ func ConfigureStableBalance() {
 	log.Printf("Config: %+v", config)
 }
 
-func ConfigureLnurlPrivateModeEnabled() {
-	// ANCHOR: lnurl-private-mode-enabled
-	// Enable LNURL private mode
+func ConfigureSupportLnurlVerify() {
+	// ANCHOR: support-lnurl-verify
+	// Enable LNURL verify support (LUD-21 and NIP-57)
 	config := breez_sdk_spark.DefaultConfig(breez_sdk_spark.NetworkMainnet)
-	config.LnurlPrivateModeEnabled = true
-	// ANCHOR_END: lnurl-private-mode-enabled
+	config.SupportLnurlVerify = true
+	// ANCHOR_END: support-lnurl-verify
 	log.Printf("Config: %+v", config)
 }

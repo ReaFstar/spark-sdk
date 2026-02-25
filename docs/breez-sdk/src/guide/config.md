@@ -58,14 +58,16 @@ This configuration option is only relevant when the SDK is initialized for the f
 
 </div>
 
-## LNURL private mode
+## LNURL Verify Support
 
-Controls whether the SDK operates in LNURL private mode. When enabled, the LNURL server won't track invoice payments for this user, disabling:
+Controls whether the SDK enables LNURL verify support. When set to `true`, the following features are enabled:
 
 - **[LUD-21](https://github.com/lnurl/luds/blob/luds/21.md)**: Invoice verification via public endpoint
 - **[NIP-57](https://github.com/nostr-protocol/nips/blob/master/57.md)**: Server-side zap receipt publishing
 
-{{#tabs config:lnurl-private-mode-enabled}}
+By default, this is set to `false` for privacy, meaning the LNURL server won't track invoice payments.
+
+{{#tabs config:support-lnurl-verify}}
 
 ## Optimization configuration
 

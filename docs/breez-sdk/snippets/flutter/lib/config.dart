@@ -60,11 +60,11 @@ Future<void> configureStableBalance() async {
   print(config);
 }
 
-Future<void> configureLnurlPrivateModeEnabled() async {
-  // ANCHOR: lnurl-private-mode-enabled
-  // Enable LNURL private mode
+Future<void> configureSupportLnurlVerify() async {
+  // ANCHOR: support-lnurl-verify
+  // Enable LNURL verify support (LUD-21 and NIP-57)
   var config = defaultConfig(network: Network.mainnet)
-      .copyWith(lnurlPrivateModeEnabled: true);
-  // ANCHOR_END: lnurl-private-mode-enabled
+      .copyWith(supportLnurlVerify: true);
+  // ANCHOR_END: support-lnurl-verify
   print(config);
 }

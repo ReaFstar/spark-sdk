@@ -57,12 +57,12 @@ class Config {
         println("Config: $config")
     }
 
-    fun configureLnurlPrivateModeEnabled() {
-        // ANCHOR: lnurl-private-mode-enabled
-        // Enable LNURL private mode
+    fun configureSupportLnurlVerify() {
+        // ANCHOR: support-lnurl-verify
+        // Enable LNURL verify support (LUD-21 and NIP-57)
         val config = defaultConfig(Network.MAINNET)
-        config.lnurlPrivateModeEnabled = true
-        // ANCHOR_END: lnurl-private-mode-enabled
+        config.supportLnurlVerify = true
+        // ANCHOR_END: support-lnurl-verify
         println("Config: $config")
     }
 }
