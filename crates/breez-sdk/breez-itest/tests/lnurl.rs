@@ -72,6 +72,7 @@ async fn bob_sdk(#[future] lnurl_fixture: LnurlFixture) -> Result<SdkInstance> {
         config.lnurl_domain = Some(lnurl_domain.to_string());
         config.sync_interval_secs = 1; // Faster sync for testing
         config.real_time_sync_server_url = None;
+        config.support_lnurl_verify = true; // Enable LUD-21 and zap receipts
 
         let mut sdk_instance = build_sdk_with_custom_config(
             temp_dir.path().to_string_lossy().to_string(),
@@ -458,6 +459,7 @@ async fn test_06_client_side_zap_receipt(
         config.sync_interval_secs = 1;
         config.real_time_sync_server_url = None;
         config.private_enabled_default = true;
+        config.support_lnurl_verify = true; // Enable LUD-21 and zap receipts
 
         build_sdk_with_custom_config(
             temp_dir.path().to_string_lossy().to_string(),
