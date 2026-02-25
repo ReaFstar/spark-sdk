@@ -378,6 +378,10 @@ class MigrationManager {
         name: "Clear cached lightning address for LnurlInfo schema change",
         sql: `DELETE FROM settings WHERE key = 'lightning_address'`
       },
+      {
+        name: "Add index on payment_hash for JOIN with lnurl_receive_metadata",
+        sql: `CREATE INDEX IF NOT EXISTS idx_payment_details_lightning_payment_hash ON payment_details_lightning(payment_hash)`
+      },
     ];
   }
 }

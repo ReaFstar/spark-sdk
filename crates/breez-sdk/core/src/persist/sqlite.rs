@@ -311,6 +311,8 @@ impl SqliteStorage {
             "DELETE FROM settings WHERE key = 'lnurl_metadata_updated_after';",
             // Clear cached lightning address - schema changed from string to LnurlInfo struct
             "DELETE FROM settings WHERE key = 'lightning_address';",
+            // Add index on payment_hash for JOIN with lnurl_receive_metadata
+            "CREATE INDEX IF NOT EXISTS idx_payment_details_lightning_payment_hash ON payment_details_lightning(payment_hash);",
         ]
     }
 }
@@ -557,16 +559,30 @@ impl Storage for SqliteStorage {
     async fn insert_payment(&self, payment: Payment) -> Result<(), StorageError> {
         let mut connection = self.get_connection()?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+
+        // Compute detail columns for the main payments row
+        let (withdraw_tx_id, deposit_tx_id, spark): (Option<&str>, Option<&str>, Option<bool>) =
+            match &payment.details {
+                Some(PaymentDetails::Withdraw { tx_id }) => (Some(tx_id.as_str()), None, None),
+                Some(PaymentDetails::Deposit { tx_id }) => (None, Some(tx_id.as_str()), None),
+                Some(PaymentDetails::Spark { .. }) => (None, None, Some(true)),
+                _ => (None, None, None),
+            };
+
+        // Insert or update main payment record (including detail columns atomically)
         tx.execute(
-            "INSERT INTO payments (id, payment_type, status, amount, fees, timestamp, method) 
-             VALUES (?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(id) DO UPDATE SET 
+            "INSERT INTO payments (id, payment_type, status, amount, fees, timestamp, method, withdraw_tx_id, deposit_tx_id, spark)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
                 payment_type=excluded.payment_type,
                 status=excluded.status,
                 amount=excluded.amount,
                 fees=excluded.fees,
                 timestamp=excluded.timestamp,
-                method=excluded.method",
+                method=excluded.method,
+                withdraw_tx_id=excluded.withdraw_tx_id,
+                deposit_tx_id=excluded.deposit_tx_id,
+                spark=excluded.spark",
             params![
                 payment.id,
                 payment.payment_type.to_string(),
@@ -575,31 +591,18 @@ impl Storage for SqliteStorage {
                 U128SqlWrapper(payment.fees),
                 payment.timestamp,
                 payment.method,
+                withdraw_tx_id,
+                deposit_tx_id,
+                spark,
             ],
         )?;
 
         match payment.details {
-            Some(PaymentDetails::Withdraw { tx_id }) => {
-                tx.execute(
-                    "UPDATE payments SET withdraw_tx_id = ? WHERE id = ?",
-                    params![tx_id, payment.id],
-                )?;
-            }
-            Some(PaymentDetails::Deposit { tx_id }) => {
-                tx.execute(
-                    "UPDATE payments SET deposit_tx_id = ? WHERE id = ?",
-                    params![tx_id, payment.id],
-                )?;
-            }
             Some(PaymentDetails::Spark {
                 invoice_details,
                 htlc_details,
                 ..
             }) => {
-                tx.execute(
-                    "UPDATE payments SET spark = 1 WHERE id = ?",
-                    params![payment.id],
-                )?;
                 if invoice_details.is_some() || htlc_details.is_some() {
                     // Upsert both details together and avoid overwriting existing data with NULLs
                     tx.execute(
@@ -670,7 +673,7 @@ impl Storage for SqliteStorage {
                     ],
                 )?;
             }
-            None => {}
+            Some(PaymentDetails::Withdraw { .. } | PaymentDetails::Deposit { .. }) | None => {}
         }
 
         tx.commit()?;
@@ -868,7 +871,7 @@ impl Storage for SqliteStorage {
         match payload {
             UpdateDepositPayload::ClaimError { error } => {
                 connection.execute(
-                    "UPDATE unclaimed_deposits SET claim_error = ? WHERE txid = ? AND vout = ?",
+                    "UPDATE unclaimed_deposits SET claim_error = ?, refund_tx = NULL, refund_tx_id = NULL WHERE txid = ? AND vout = ?",
                     params![error, txid, vout],
                 )?;
             }
@@ -877,7 +880,7 @@ impl Storage for SqliteStorage {
                 refund_tx,
             } => {
                 connection.execute(
-                    "UPDATE unclaimed_deposits SET refund_tx = ?, refund_tx_id = ? WHERE txid = ? AND vout = ?",
+                    "UPDATE unclaimed_deposits SET refund_tx = ?, refund_tx_id = ?, claim_error = NULL WHERE txid = ? AND vout = ?",
                     params![refund_tx, refund_txid, txid, vout],
                 )?;
             }
