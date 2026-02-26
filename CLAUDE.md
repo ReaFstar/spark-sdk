@@ -64,10 +64,35 @@ make clippy-fix         # Fix clippy issues
 
 ### Key Abstractions
 
-- `Storage` trait - Pluggable persistence layer (default: SQLite)
+- `Storage` trait - Pluggable persistence layer (see Storage Implementations below)
 - `Signer` trait - Cryptographic operations (FROST threshold signing)
 - `BitcoinChainService` trait - Blockchain provider interface
 - `EventEmitter` - Broadcasts `SdkEvent` (Synced, PaymentSucceeded, PaymentFailed, etc.)
+
+### Storage Implementations
+
+The `Storage` trait (`crates/breez-sdk/core/src/persist/mod.rs`) has multiple implementations. **When adding new Storage functionality, all implementations must be updated.**
+
+| Implementation | Location | Platform | DB |
+|---|---|---|---|
+| SQLite (Rust) | `crates/breez-sdk/core/src/persist/sqlite.rs` | Native (macOS, Linux, Windows) | SQLite |
+| PostgreSQL (Rust) | `crates/breez-sdk/core/src/persist/postgres.rs` | Server (feature-gated: `postgres`) | PostgreSQL |
+| Web (JS) | `crates/breez-sdk/wasm/js/web-storage/index.js` | Browser (WASM) | IndexedDB |
+| Node SQLite (JS) | `crates/breez-sdk/wasm/js/node-storage/index.cjs` | Node.js (WASM) | SQLite (`better-sqlite3`) |
+| Node Postgres (JS) | `crates/breez-sdk/wasm/js/postgres-storage/index.cjs` | Node.js (WASM) | PostgreSQL (`pg`) |
+
+All implementations run the **same shared test suite** in `crates/breez-sdk/core/src/persist/tests.rs`. When modifying storage:
+
+1. Update every implementation listed above
+2. Add test coverage to the shared test suite (`tests.rs`)
+3. Add calls to any new test functions in **each** implementation's test harness:
+   - Rust SQLite: `crates/breez-sdk/core/src/persist/sqlite.rs` (test module at bottom)
+   - Rust Postgres: `crates/breez-sdk/core/src/persist/postgres.rs` (test module at bottom)
+   - Web: `crates/breez-sdk/wasm/src/persist/tests/web.rs`
+   - Node SQLite: `crates/breez-sdk/wasm/src/persist/tests/node.rs`
+   - Node Postgres: `crates/breez-sdk/wasm/src/persist/tests/postgres.rs`
+
+JS implementations also have migration files (`migrations.cjs`) alongside their `index.cjs`.
 
 ### Data Flow
 

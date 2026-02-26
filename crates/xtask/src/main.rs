@@ -268,6 +268,20 @@ fn wasm_test_cmd(
                 .run()
                 .with_context(|| "Failed to rebuild native modules.")?;
             sh.change_dir(&current_dir);
+
+            // Install postgres-storage dependencies
+            let pg_storage_path = Path::new("crates/breez-sdk/wasm/js/postgres-storage");
+            if pg_storage_path.exists() {
+                println!(
+                    "Installing npm dependencies in {}...",
+                    pg_storage_path.display()
+                );
+                sh.change_dir(pg_storage_path);
+                cmd!(sh, "npm install")
+                    .run()
+                    .with_context(|| "Failed to install postgres-storage npm dependencies.")?;
+                sh.change_dir(&current_dir);
+            }
         }
 
         let package_dir = pkg

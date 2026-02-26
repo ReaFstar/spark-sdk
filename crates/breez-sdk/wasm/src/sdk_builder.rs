@@ -17,6 +17,37 @@ use bitcoin::secp256k1::PublicKey;
 use breez_sdk_spark::KeySet;
 use wasm_bindgen::prelude::*;
 
+/// Configuration for PostgreSQL storage connection pool.
+#[derive(serde::Serialize, serde::Deserialize, tsify_next::Tsify)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+#[serde(rename_all = "camelCase")]
+pub struct PostgresStorageConfig {
+    /// PostgreSQL connection string (URI format).
+    pub connection_string: String,
+    /// Maximum number of connections in the pool.
+    pub max_pool_size: u32,
+    /// Timeout in seconds for establishing a new connection (0 = no timeout).
+    pub create_timeout_secs: u32,
+    /// Timeout in seconds before recycling an idle connection.
+    pub recycle_timeout_secs: u32,
+}
+
+/// Creates a default PostgreSQL storage configuration with sensible defaults.
+///
+/// Default values (from pg.Pool):
+/// - `maxPoolSize`: 10
+/// - `createTimeoutSecs`: 0 (no timeout)
+/// - `recycleTimeoutSecs`: 10 (10 seconds idle before disconnect)
+#[wasm_bindgen(js_name = "defaultPostgresStorageConfig")]
+pub fn default_postgres_storage_config(connection_string: &str) -> PostgresStorageConfig {
+    PostgresStorageConfig {
+        connection_string: connection_string.to_string(),
+        max_pool_size: 10,
+        create_timeout_secs: 0,
+        recycle_timeout_secs: 10,
+    }
+}
+
 #[wasm_bindgen]
 pub struct SdkBuilder {
     builder: breez_sdk_spark::SdkBuilder,
@@ -24,6 +55,7 @@ pub struct SdkBuilder {
     seed: breez_sdk_spark::Seed,
     default_storage_dir: Option<String>,
     storage: Option<Storage>,
+    postgres_config: Option<PostgresStorageConfig>,
     key_set_type: breez_sdk_spark::KeySetType,
     use_address_index: bool,
     account_number: Option<u32>,
@@ -42,6 +74,7 @@ impl SdkBuilder {
             builder: breez_sdk_spark::SdkBuilder::new(config, seed),
             default_storage_dir: None,
             storage: None,
+            postgres_config: None,
             key_set_type: breez_sdk_spark::KeySetType::Default,
             use_address_index: false,
             account_number: None,
@@ -63,6 +96,7 @@ impl SdkBuilder {
             builder: breez_sdk_spark::SdkBuilder::new_with_signer(config_core, signer_adapter),
             default_storage_dir: None,
             storage: None,
+            postgres_config: None,
             key_set_type: breez_sdk_spark::KeySetType::Default,
             use_address_index: false,
             account_number: None,
@@ -78,6 +112,12 @@ impl SdkBuilder {
     #[wasm_bindgen(js_name = "withStorage")]
     pub fn with_storage(mut self, storage: Storage) -> Self {
         self.storage = Some(storage);
+        self
+    }
+
+    #[wasm_bindgen(js_name = "withPostgresStorage")]
+    pub fn with_postgres_storage(mut self, config: PostgresStorageConfig) -> Self {
+        self.postgres_config = Some(config);
         self
     }
 
@@ -146,8 +186,8 @@ impl SdkBuilder {
 
     #[wasm_bindgen(js_name = "build")]
     pub async fn build(mut self) -> WasmResult<BreezSdk> {
-        match (self.default_storage_dir, self.storage) {
-            (Some(storage_dir), None) => {
+        match (self.default_storage_dir, self.storage, self.postgres_config) {
+            (Some(storage_dir), None, None) => {
                 // Create key set to get identity_pub_key for WASM-compatible storage
                 let key_set = KeySet::new(
                     &self.seed.to_bytes()?,
@@ -166,13 +206,20 @@ impl SdkBuilder {
                 });
                 self.builder = self.builder.with_storage(storage);
             }
-            (None, Some(storage)) => {
+            (None, Some(storage), None) => {
                 let storage_arc = Arc::new(WasmStorage { storage });
                 self.builder = self.builder.with_storage(storage_arc);
             }
+            (None, None, Some(config)) => {
+                let logger_ref = get_wasm_logger_ref();
+                let storage = Arc::new(WasmStorage {
+                    storage: create_postgres_storage(config, logger_ref).await?,
+                });
+                self.builder = self.builder.with_storage(storage);
+            }
             _ => {
                 return Err(WasmError::new(
-                    "One and only one of default storage directory or storage must be set",
+                    "Exactly one of default storage directory, storage, or postgres config must be set",
                 ));
             }
         }
@@ -182,23 +229,30 @@ impl SdkBuilder {
     }
 }
 
+/// Returns a `'static` reference to the thread-local WASM logger.
+///
+/// # Safety
+///
+/// In WASM, thread-local storage is stable and the logger reference will remain
+/// valid for the duration of any async function call. The WASM environment is
+/// single-threaded, so there's no risk of the logger being moved or deallocated.
+fn get_wasm_logger_ref() -> Option<&'static Logger> {
+    unsafe {
+        WASM_LOGGER.with_borrow(|logger| {
+            logger
+                .as_ref()
+                .map(|l| std::mem::transmute::<&Logger, &'static Logger>(l))
+        })
+    }
+}
+
 async fn default_storage(
     data_dir: &str,
     network: &breez_sdk_spark::Network,
     identity_pub_key: &PublicKey,
 ) -> WasmResult<Storage> {
     let db_path = breez_sdk_spark::default_storage_path(data_dir, network, identity_pub_key)?;
-    // SAFETY: In WASM, thread-local storage is stable and the logger reference
-    // will remain valid for the duration of this async function call.
-    // The WASM environment is single-threaded, so there's no risk of the
-    // logger being moved or deallocated during the async operation.
-    let logger_ref = unsafe {
-        WASM_LOGGER.with_borrow(|logger| {
-            logger
-                .as_ref()
-                .map(|l| std::mem::transmute::<&Logger, &'static Logger>(l))
-        })
-    };
+    let logger_ref = get_wasm_logger_ref();
     Ok(create_default_storage(db_path.to_string_lossy().as_ref(), logger_ref).await?)
 }
 
@@ -207,6 +261,12 @@ extern "C" {
     #[wasm_bindgen(js_name = "createDefaultStorage", catch)]
     async fn create_default_storage(
         data_dir: &str,
+        logger: Option<&Logger>,
+    ) -> Result<crate::persist::Storage, JsValue>;
+
+    #[wasm_bindgen(js_name = "createPostgresStorage", catch)]
+    async fn create_postgres_storage(
+        config: PostgresStorageConfig,
         logger: Option<&Logger>,
     ) -> Result<crate::persist::Storage, JsValue>;
 }

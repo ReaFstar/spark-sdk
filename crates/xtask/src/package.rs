@@ -185,6 +185,7 @@ fn package_wasm_target(
     // For Node.js target, copy the JavaScript sqlite storage implementation
     if target == "nodejs" {
         copy_nodejs_storage_files(crate_dir, &out_path)?;
+        copy_postgres_storage_files(crate_dir, &out_path)?;
     }
 
     if target == "web" || target == "bundler" {
@@ -267,6 +268,72 @@ fn copy_nodejs_storage_files(crate_dir: &Path, out_path: &Path) -> Result<()> {
     Ok(())
 }
 
+fn copy_postgres_storage_files(crate_dir: &Path, out_path: &Path) -> Result<()> {
+    let js_storage_src = crate_dir.join("js/postgres-storage");
+
+    if !js_storage_src.exists() {
+        println!(
+            "Warning: PostgreSQL storage source directory not found at {:?}",
+            js_storage_src
+        );
+        return Ok(());
+    }
+
+    let storage_dest = out_path.join("postgres-storage");
+
+    // Create storage directory in output
+    std::fs::create_dir_all(&storage_dest)?;
+
+    // Copy the CommonJS storage implementation files (keeping .cjs extensions)
+    let files_to_copy = ["index.cjs", "errors.cjs", "migrations.cjs"];
+
+    for file_name in files_to_copy {
+        let src_file = js_storage_src.join(file_name);
+        let dest_file = storage_dest.join(file_name);
+
+        if src_file.exists() {
+            std::fs::copy(&src_file, &dest_file).with_context(|| {
+                format!(
+                    "Failed to copy {} to {}",
+                    src_file.display(),
+                    dest_file.display()
+                )
+            })?;
+            println!("Copied PostgreSQL storage file: {}", file_name);
+        } else {
+            return Err(anyhow::anyhow!(
+                "PostgreSQL storage file not found: {}",
+                src_file.display()
+            ));
+        }
+    }
+
+    // Create a CommonJS package.json for the postgres storage module
+    let storage_package_json = serde_json::json!({
+        "name": "@breez-sdk/postgres-storage",
+        "version": "1.0.0",
+        "description": "Node.js PostgreSQL storage implementation for Breez SDK WASM (CommonJS)",
+        "main": "index.cjs",
+        "dependencies": {
+            "pg": "^8.18.0"
+        }
+    });
+
+    let dest_package_json = storage_dest.join("package.json");
+    let package_content = serde_json::to_string_pretty(&storage_package_json)
+        .with_context(|| "Failed to serialize postgres storage package.json")?;
+
+    std::fs::write(&dest_package_json, package_content)
+        .with_context(|| "Failed to write postgres storage package.json".to_string())?;
+    println!("Created PostgreSQL storage package.json");
+
+    println!(
+        "Successfully copied PostgreSQL storage files to {}",
+        storage_dest.display()
+    );
+    Ok(())
+}
+
 fn create_nodejs_entry_point(out_path: &Path) -> Result<()> {
     let entry_content = r#"// Node.js entry point for Breez SDK with automatic storage support
 const wasmModule = require('./breez_sdk_spark_wasm.js');
@@ -274,14 +341,24 @@ const wasmModule = require('./breez_sdk_spark_wasm.js');
 // Automatically import and set up the storage for Node.js
 try {
     const { createDefaultStorage } = require('./storage/index.cjs');
-    
+
     // Make createDefaultStorage available globally for WASM to find
     global.createDefaultStorage = createDefaultStorage;
-    
+
     console.log('Breez SDK: Node.js storage automatically enabled');
 } catch (error) {
     console.warn('Breez SDK: Failed to load Node.js storage:', error.message);
     console.warn('Breez SDK: Storage operations may not work properly. Ignore this warning if you are not using the default storage.');
+}
+
+// Automatically import and set up the PostgreSQL storage for Node.js
+try {
+    const { createPostgresStorage } = require('./postgres-storage/index.cjs');
+    global.createPostgresStorage = createPostgresStorage;
+} catch (error) {
+    if (error.code !== 'MODULE_NOT_FOUND') {
+        console.warn('Breez SDK: Failed to load PostgreSQL storage:', error.message);
+    }
 }
 
 // Export all WASM functions
@@ -334,6 +411,7 @@ fn update_nodejs_package_json(out_path: &Path) -> Result<()> {
     if let Some(files) = package_json.get_mut("files") {
         if let Some(files_array) = files.as_array_mut() {
             files_array.push(serde_json::Value::String("storage/".to_string()));
+            files_array.push(serde_json::Value::String("postgres-storage/".to_string()));
             files_array.push(serde_json::Value::String("index.js".to_string()));
         }
     } else {
@@ -342,6 +420,7 @@ fn update_nodejs_package_json(out_path: &Path) -> Result<()> {
             "breez_sdk_spark_wasm.js",
             "breez_sdk_spark_wasm.d.ts",
             "storage/",
+            "postgres-storage/",
             "index.js"
         ]);
     }

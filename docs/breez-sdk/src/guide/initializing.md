@@ -32,7 +32,7 @@ On some platforms (e.g., Android, iOS), you must use an application-specific wri
 
 For advanced use cases where you need more control, you can configure the SDK using the Builder pattern. With the SDK Builder you can define:
 
-- [Storage](customizing.md#with-storage) and [Real-Time Storage](customizing.md#with-real-time-storage) to manage stored data
+- [Storage](customizing.md#with-storage) to manage stored data
 - [Bitcoin Chain Service](customizing.md#with-chain-service) to provide network data
 - [LNURL Client](customizing.md#with-lnurl-client) to make REST requests
 - [Fiat Service](customizing.md#with-fiat-service) to provide Fiat currencies and exchange rates 

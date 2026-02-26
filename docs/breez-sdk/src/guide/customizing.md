@@ -28,7 +28,7 @@ When using the SDK Builder, you either have to provide a Storage implementation 
 
 The SDK includes a PostgreSQL storage implementation as an alternative. This is useful for environments where file-based storage may not be suitable.
 
-**Note:** Not available for Javascript, React Native or Flutter.
+**Note:** Not available for React Native or Flutter. For JavaScript/TypeScript, only supported in Node.js (not in the browser).
 
 {{#tabs sdk_building:init-sdk-postgres}}
 

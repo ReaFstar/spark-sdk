@@ -1,8 +1,10 @@
-const { initLogging, defaultConfig, SdkBuilder } = require('@breeztech/breez-sdk-spark/nodejs')
+const { initLogging, defaultConfig, defaultPostgresStorageConfig, SdkBuilder } = require('@breeztech/breez-sdk-spark/nodejs')
 const fs = require('fs')
 const qrcode = require('qrcode')
 const { question, confirm } = require('./prompt.js')
 require('dotenv').config()
+
+const postgresConnectionString = process.env.POSTGRES_CONNECTION_STRING
 
 BigInt.prototype.toJSON = function () {
     return this.toString()
@@ -57,7 +59,11 @@ const initSdk = async () => {
     config.apiKey = process.env.BREEZ_API_KEY
 
     let sdkBuilder = SdkBuilder.new(config, { type: 'mnemonic', mnemonic: mnemonic })
-    sdkBuilder = await sdkBuilder.withDefaultStorage('./.data')
+    if (postgresConnectionString) {
+        sdkBuilder = sdkBuilder.withPostgresStorage(defaultPostgresStorageConfig(postgresConnectionString))
+    } else {
+        sdkBuilder = await sdkBuilder.withDefaultStorage('./.data')
+    }
     sdkBuilder = sdkBuilder.withPaymentObserver(paymentObserver)
     if (process.env.CHAIN_SERVICE_USERNAME && process.env.CHAIN_SERVICE_PASSWORD) {
         sdkBuilder = sdkBuilder.withRestChainService(
