@@ -1,0 +1,69 @@
+pipeline {
+    agent any
+
+    environment {
+        APP_NAME = "lnurl-server"
+        DATABASE_URL=credentials('DB_URL')
+        // 去掉私有仓库IP，只用本地镜像名
+        DOCKER_IMAGE = "${APP_NAME}:v1.0"
+        NAMESPACE = "lifpay-test"
+        PORT = 3001
+    }
+
+    stages {
+        stage('拉取代码') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('构建 Docker 镜像') {
+            steps {
+                // 构建镜像（指定 Dockerfile 路径）
+                sh "docker build -t ${DOCKER_IMAGE} -f crates/breez-sdk/lnurl/Dockerfile ."
+                sh "docker images | grep ${APP_NAME}"
+
+            }
+        }
+
+        //镜像本地打包部署，暂不推送到仓库
+
+        stage('部署到 K3s') {
+            steps {
+                sh '''
+                // 替换部署 YAML 中的镜像地址
+                sed -i 's|__IMAGE__|${DOCKER_IMAGE}|g' deploy.yaml
+                // 替换命名空间
+                sed -i 's|__NAMESPACE__|${NAMESPACE}|g' deploy.yaml
+                sed -i 's|__DATABASE_URL__|${DATABASE_URL}|g' deploy.yaml
+
+                // 部署应用
+                kubectl apply -f deploy.yaml -n ${NAMESPACE}
+                // 查看部署状态
+                kubectl get pods -n ${NAMESPACE} -l app=lnurl-server
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "===== 流水线执行成功！Rust应用已部署到k3s集群 ====="
+            sh '''
+                echo "应用名称：${APP_NAME}"
+                echo "访问地址：http://$(hostname -I | awk '{print $1}'):30301"
+                echo "k3s命名空间：${NAMESPACE}"
+            '''
+        }
+        failure {
+            echo "===== 流水线执行失败！====="
+            sh 'kubectl logs -n ${NAMESPACE} -l app=${APP_NAME} || true'
+        }
+        always {
+            echo "清理临时文件"
+            sh 'rm -rf ${BUILD_DIR}'
+        }
+    }
+
+
+}

@@ -1,0 +1,106 @@
+# 命名空间（Jenkins 替换）
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: __NAMESPACE__
+
+---
+# 配置项：LNURL 服务核心配置（非敏感信息）
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lnurl-server-config
+  namespace: __NAMESPACE__
+data:
+  # 服务监听地址
+  BREEZ_LNURL_ADDRESS: "0.0.0.0:3001"
+  # 自动执行数据库迁移
+  BREEZ_LNURL_AUTO_MIGRATE: "true"
+  # 网络环境（生产用 mainnet，测试用 testnet）
+  BREEZ_LNURL_NETWORK: "testnet"
+  # 允许的域名（替换为你的实际域名，多个用逗号分隔）
+  BREEZ_LNURL_DOMAINS: "test.lifpay.me"
+  # 日志级别
+  BREEZ_LNURL_LOG_LEVEL: "info"
+  # 支付金额范围（毫秒聪）
+  BREEZ_LNURL_MIN_SENDABLE: "1000"
+  BREEZ_LNURL_MAX_SENDABLE: "4000000000"
+
+---
+# 密钥：数据库连接信息（敏感信息，单独存储）
+apiVersion: v1
+kind: Secret
+metadata:
+  name: lnurl-server-secret
+  namespace: __NAMESPACE__
+type: Opaque
+stringData:
+  # PostgreSQL 连接串（替换为你的实际数据库地址、用户名、密码）
+  BREEZ_LNURL_DB_URL: __DATABASE_URL__
+
+---
+# 部署：LNURL 服务核心应用
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lnurl-server
+  namespace: __NAMESPACE__
+spec:
+  replicas: 1  # 生产环境可调整为 2+
+  selector:
+    matchLabels:
+      app: lnurl-server
+  template:
+    metadata:
+      labels:
+        app: lnurl-server
+    spec:
+      # 安全上下文：使用非 root 用户运行
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: lnurl-server
+          # 镜像地址（Jenkins 替换）
+          image: __IMAGE__
+          # 镜像拉取策略：优先拉取最新
+          imagePullPolicy: Never
+          # 环境变量：从配置项和密钥中读取
+          envFrom:
+            - configMapRef:
+                name: lnurl-server-config
+            - secretRef:
+                name: lnurl-server-secret
+          # 健康检查（保证服务可用性）
+          livenessProbe:
+            httpGet:
+              path: /.well-known/lnurlp/test
+              port: 3001
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /.well-known/lnurlp/test
+              port: 3001
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          # 端口暴露
+          ports:
+            - containerPort: 3001
+              name: http
+              protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lnurl-server-service
+  namespace: __NAMESPACE__
+spec:
+  type: NodePort
+  ports:
+    - port: 3001
+      targetPort: 3001
+      nodePort: 30301
+  selector:
+    app: lnurl-server
