@@ -1,55 +1,58 @@
-# 构建阶段：使用官方 Rust 瘦身镜像，保证编译环境一致性
-FROM rust:slim-bookworm AS builder
+# 阶段1：构建 Rust 二进制文件（多阶段构建，减小最终镜像体积）
+FROM rust:1.75-slim AS builder
 
-# 设置构建参数（Jenkins 传递镜像标签）
-ARG IMAGE_TAG=latest
-
-# 安装编译依赖（与文档一致）
-RUN apt-get update -qq && \
-    apt-get install -qq -y --no-install-recommends \
+# 安装构建依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libprotobuf-dev \
     libssl-dev \
     pkg-config \
-    protobuf-compiler && \
-    rm -rf /var/lib/apt/lists/*
+    protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
 
-# 创建工作目录（严格匹配源码结构）
-RUN mkdir -p /app/crates/breez-sdk/lnurl/
+# 设置工作目录
+WORKDIR /app
 
-# 复制源码（Jenkins 会将仓库根目录挂载到 /app）
-COPY . /app
+# 复制 Cargo 配置（利用缓存加速构建）
+COPY Cargo.toml Cargo.lock ./
+COPY crates/breez-sdk/lnurl/Cargo.toml ./crates/breez-sdk/lnurl/
 
-# 进入工作目录，编译发布版
-WORKDIR /app/crates/breez-sdk/lnurl
-RUN cargo build --release --bin lnurl
+# 预编译依赖（空文件占位）
+RUN mkdir -p ./crates/breez-sdk/lnurl/src && echo "fn main() {}" > ./crates/breez-sdk/lnurl/src/main.rs
+RUN cargo build --release --manifest-path crates/breez-sdk/lnurl/Cargo.toml
+RUN rm -rf ./crates/breez-sdk/lnurl/src
 
-# 运行阶段：使用 Debian 瘦身镜像，减小最终镜像体积
-FROM debian:bookworm-slim AS final
+# 复制源码
+COPY . .
 
-# 安装运行依赖（证书、OpenSSL，保证网络和 HTTPS 正常）
-RUN apt-get update -qq && \
-    apt-get install -qq -y --no-install-recommends \
+# 正式构建
+RUN cargo build --release --manifest-path crates/breez-sdk/lnurl/Cargo.toml
+
+# 阶段2：生成最终镜像（精简版）
+FROM debian:bookworm-slim
+
+# 安装运行时依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libssl3 \
+    libprotobuf32 \
     ca-certificates \
-    openssl && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
-# 创建非 root 用户，提升安全性（生产环境必备）
-RUN useradd -m -s /bin/bash lnurl && \
-    mkdir -p /data && \
-    chown lnurl:lnurl /data
-
-# 切换非 root 用户
+# 创建非 root 用户（K8s 最佳实践）
+RUN useradd -m -u 1000 lnurl
 USER lnurl
 
-# 从构建阶段复制编译好的二进制文件
-COPY --from=builder /app/crates/breez-sdk/lnurl/target/release/lnurl /usr/local/bin/
+# 设置工作目录
+WORKDIR /home/lnurl
 
-# 暴露服务端口（与文档一致）
+# 从构建阶段复制二进制文件
+COPY --from=builder /app/target/release/lnurl ./
+
+# 暴露端口
 EXPOSE 3001
 
-# 数据卷（持久化 SQLite 或日志，生产环境建议 PostgreSQL）
-VOLUME ["/data"]
+# 健康检查（K8s 探针用）
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD curl -f http://127.0.0.1:8080/lnurlp/health || exit 1
 
-# 入口点（保持与源码一致，通过环境变量配置）
-ENTRYPOINT ["/usr/local/bin/lnurl"]
+# 启动命令
+ENTRYPOINT ["./lnurl"]

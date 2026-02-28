@@ -3,7 +3,6 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: __NAMESPACE__
-
 ---
 # 配置项：LNURL 服务核心配置（非敏感信息）
 apiVersion: v1
@@ -25,6 +24,7 @@ data:
   # 支付金额范围（毫秒聪）
   BREEZ_LNURL_MIN_SENDABLE: "1000"
   BREEZ_LNURL_MAX_SENDABLE: "4000000000"
+  BREEZ_LNURL_SCHEME: "http"
 
 ---
 # 密钥：数据库连接信息（敏感信息，单独存储）
@@ -50,6 +50,11 @@ spec:
   selector:
     matchLabels:
       app: lnurl-server
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
   template:
     metadata:
       labels:
@@ -72,35 +77,36 @@ spec:
                 name: lnurl-server-config
             - secretRef:
                 name: lnurl-server-secret
-          # 健康检查（保证服务可用性）
-          livenessProbe:
-            httpGet:
-              path: /.well-known/lnurlp/test
-              port: 3001
-            initialDelaySeconds: 30
-            periodSeconds: 10
-          readinessProbe:
-            httpGet:
-              path: /.well-known/lnurlp/test
-              port: 3001
-            initialDelaySeconds: 5
-            periodSeconds: 5
           # 端口暴露
           ports:
             - containerPort: 3001
               name: http
               protocol: TCP
+          # 健康检查（保证服务可用性）
+          livenessProbe:
+            httpGet:
+              path: /lnurlp/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /lnurlp/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: lnurl-server-service
-  namespace: __NAMESPACE__
+  name: lnurl-server
 spec:
   type: NodePort
-  ports:
-    - port: 3001
-      targetPort: 3001
-      nodePort: 30301
   selector:
     app: lnurl-server
+  ports:
+    - name: http
+      port: 3001
+      targetPort: 3001
+      nodePort: 30301  # K3s 节点端口（30000-32767 范围）
+  sessionAffinity: None

@@ -6,7 +6,7 @@ pipeline {
         DATABASE_URL=credentials('DB_URL')
         // 去掉私有仓库IP，只用本地镜像名
         DOCKER_IMAGE = "${APP_NAME}:v1.0"
-        NAMESPACE = "lifpay-test"
+        NAMESPACE = "lnurl"
         PORT = 3001
     }
 
@@ -39,8 +39,8 @@ pipeline {
 
                 // 部署应用
                 kubectl apply -f deploy.yaml -n ${NAMESPACE}
-                // 查看部署状态
-                kubectl get pods -n ${NAMESPACE} -l app=lnurl-server
+                // 等待部署完成
+                kubectl rollout status deployment/${APP_NAME} -n ${NAMESPACE}
                 '''
             }
         }
@@ -51,8 +51,8 @@ pipeline {
             echo "===== 流水线执行成功！Rust应用已部署到k3s集群 ====="
             sh '''
                 echo "应用名称：${APP_NAME}"
-                echo "访问地址：http://$(hostname -I | awk '{print $1}'):30301"
-                echo "k3s命名空间：${NAMESPACE}"
+                echo "访问地址：30301"
+                echo "命名空间：${NAMESPACE}"
             '''
         }
         failure {
@@ -60,8 +60,8 @@ pipeline {
             sh 'kubectl logs -n ${NAMESPACE} -l app=${APP_NAME} || true'
         }
         always {
-            echo "清理临时文件"
-            sh 'rm -rf ${BUILD_DIR}'
+            echo "清理镜像"
+            sh "docker rmi ${DOCKER_IMAGE} || true"
         }
     }
 
