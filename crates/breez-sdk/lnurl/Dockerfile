@@ -1,5 +1,5 @@
 # 阶段1：构建 Rust 二进制文件（多阶段构建，减小最终镜像体积）
-FROM rust:1.75-slim AS builder
+FROM rust:1.81-slim AS builder
 
 # 安装构建依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
